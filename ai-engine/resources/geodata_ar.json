@@ -1,0 +1,372 @@
+{
+    "CABA": {
+        "aliases": [
+            "CABA",
+            "Ciudad Autónoma de Buenos Aires",
+            "Capital Federal",
+            "Buenos Aires City"
+        ],
+        "canonical": "Ciudad Autónoma de Buenos Aires",
+        "provincia": "CABA",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -34.6037,
+            "lon": -58.3816
+        }
+    },
+    "Buenos Aires": {
+        "aliases": [
+            "Provincia de Buenos Aires",
+            "PBA"
+        ],
+        "canonical": "Buenos Aires",
+        "provincia": "Buenos Aires",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -36.6769,
+            "lon": -60.5588
+        }
+    },
+    "Rosario": {
+        "aliases": [
+            "Rosario",
+            "Gran Rosario"
+        ],
+        "canonical": "Rosario",
+        "provincia": "Santa Fe",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -32.9442,
+            "lon": -60.6505
+        }
+    },
+    "Córdoba": {
+        "aliases": [
+            "Córdoba",
+            "Cordoba",
+            "Ciudad de Córdoba"
+        ],
+        "canonical": "Córdoba",
+        "provincia": "Córdoba",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -31.4135,
+            "lon": -64.1811
+        }
+    },
+    "Mendoza": {
+        "aliases": [
+            "Mendoza",
+            "Ciudad de Mendoza"
+        ],
+        "canonical": "Mendoza",
+        "provincia": "Mendoza",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -32.8895,
+            "lon": -68.8458
+        }
+    },
+    "San Miguel de Tucumán": {
+        "aliases": [
+            "Tucumán",
+            "Tucuman",
+            "San Miguel de Tucumán"
+        ],
+        "canonical": "San Miguel de Tucumán",
+        "provincia": "Tucumán",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -26.8241,
+            "lon": -65.2226
+        }
+    },
+    "La Plata": {
+        "aliases": [
+            "La Plata"
+        ],
+        "canonical": "La Plata",
+        "provincia": "Buenos Aires",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -34.9214,
+            "lon": -57.9545
+        }
+    },
+    "Mar del Plata": {
+        "aliases": [
+            "Mar del Plata",
+            "MDP",
+            "La Feliz"
+        ],
+        "canonical": "Mar del Plata",
+        "provincia": "Buenos Aires",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -38.0055,
+            "lon": -57.5426
+        }
+    },
+    "Salta": {
+        "aliases": [
+            "Salta",
+            "Ciudad de Salta"
+        ],
+        "canonical": "Salta",
+        "provincia": "Salta",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -24.7821,
+            "lon": -65.4232
+        }
+    },
+    "Santa Fe": {
+        "aliases": [
+            "Santa Fe",
+            "Ciudad de Santa Fe"
+        ],
+        "canonical": "Santa Fe",
+        "provincia": "Santa Fe",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -31.6107,
+            "lon": -60.6973
+        }
+    },
+    "San Juan": {
+        "aliases": [
+            "San Juan",
+            "Ciudad de San Juan"
+        ],
+        "canonical": "San Juan",
+        "provincia": "San Juan",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -31.5375,
+            "lon": -68.5364
+        }
+    },
+    "Resistencia": {
+        "aliases": [
+            "Resistencia"
+        ],
+        "canonical": "Resistencia",
+        "provincia": "Chaco",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -27.4514,
+            "lon": -58.9867
+        }
+    },
+    "Santiago del Estero": {
+        "aliases": [
+            "Santiago del Estero"
+        ],
+        "canonical": "Santiago del Estero",
+        "provincia": "Santiago del Estero",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -27.7834,
+            "lon": -64.2642
+        }
+    },
+    "Corrientes": {
+        "aliases": [
+            "Corrientes"
+        ],
+        "canonical": "Corrientes",
+        "provincia": "Corrientes",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -27.4692,
+            "lon": -58.8306
+        }
+    },
+    "Neuquén": {
+        "aliases": [
+            "Neuquén",
+            "Neuquen"
+        ],
+        "canonical": "Neuquén",
+        "provincia": "Neuquén",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -38.9516,
+            "lon": -68.0591
+        }
+    },
+    "Posadas": {
+        "aliases": [
+            "Posadas"
+        ],
+        "canonical": "Posadas",
+        "provincia": "Misiones",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -27.3671,
+            "lon": -55.8961
+        }
+    },
+    "San Salvador de Jujuy": {
+        "aliases": [
+            "Jujuy",
+            "San Salvador de Jujuy"
+        ],
+        "canonical": "San Salvador de Jujuy",
+        "provincia": "Jujuy",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -24.1858,
+            "lon": -65.2995
+        }
+    },
+    "Bahía Blanca": {
+        "aliases": [
+            "Bahía Blanca",
+            "Bahia Blanca"
+        ],
+        "canonical": "Bahía Blanca",
+        "provincia": "Buenos Aires",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -38.7183,
+            "lon": -62.2663
+        }
+    },
+    "Paraná": {
+        "aliases": [
+            "Paraná",
+            "Parana"
+        ],
+        "canonical": "Paraná",
+        "provincia": "Entre Ríos",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -31.7333,
+            "lon": -60.5333
+        }
+    },
+    "Formosa": {
+        "aliases": [
+            "Formosa"
+        ],
+        "canonical": "Formosa",
+        "provincia": "Formosa",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -26.1849,
+            "lon": -58.1731
+        }
+    },
+    "San Luis": {
+        "aliases": [
+            "San Luis"
+        ],
+        "canonical": "San Luis",
+        "provincia": "San Luis",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -33.3017,
+            "lon": -66.3378
+        }
+    },
+    "Catamarca": {
+        "aliases": [
+            "San Fernando del Valle de Catamarca",
+            "Catamarca"
+        ],
+        "canonical": "San Fernando del Valle de Catamarca",
+        "provincia": "Catamarca",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -28.4696,
+            "lon": -65.7852
+        }
+    },
+    "La Rioja": {
+        "aliases": [
+            "La Rioja"
+        ],
+        "canonical": "La Rioja",
+        "provincia": "La Rioja",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -29.4111,
+            "lon": -66.8506
+        }
+    },
+    "Santa Rosa": {
+        "aliases": [
+            "Santa Rosa"
+        ],
+        "canonical": "Santa Rosa",
+        "provincia": "La Pampa",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -36.6167,
+            "lon": -64.2833
+        }
+    },
+    "Río Gallegos": {
+        "aliases": [
+            "Río Gallegos",
+            "Rio Gallegos"
+        ],
+        "canonical": "Río Gallegos",
+        "provincia": "Santa Cruz",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -51.6226,
+            "lon": -69.2181
+        }
+    },
+    "Viedma": {
+        "aliases": [
+            "Viedma"
+        ],
+        "canonical": "Viedma",
+        "provincia": "Río Negro",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -40.8135,
+            "lon": -62.9967
+        }
+    },
+    "Ushuaia": {
+        "aliases": [
+            "Ushuaia"
+        ],
+        "canonical": "Ushuaia",
+        "provincia": "Tierra del Fuego",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -54.8019,
+            "lon": -68.303
+        }
+    },
+    "Rawson": {
+        "aliases": [
+            "Rawson"
+        ],
+        "canonical": "Rawson",
+        "provincia": "Chubut",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -43.3002,
+            "lon": -65.1023
+        }
+    },
+    "Bariloche": {
+        "aliases": [
+            "Bariloche",
+            "San Carlos de Bariloche"
+        ],
+        "canonical": "San Carlos de Bariloche",
+        "provincia": "Río Negro",
+        "pais": "Argentina",
+        "coords": {
+            "lat": -41.1335,
+            "lon": -71.3103
+        }
+    }
+}

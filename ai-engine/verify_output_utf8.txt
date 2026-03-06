@@ -1,0 +1,96 @@
+﻿python : 2026-03-04 12:03:15,535 - 
+VerifyGemini - INFO - Redis not found, 
+mocked for local test
+En línea: 1 Carácter: 1
++ python verify_gemini_connection.py > 
+verify_output.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: 
+    (2026-03-04 12:0... for local test:Str  
+  ing) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommand 
+   Error
+ 
+C:\Users\Luciano\Documents\Pragramaci¾n\News
+yx\ai-engine\llm\gemini_client.py:2: 
+FutureWarning: 
+
+All support for the `google.generativeai` 
+package has ended. It will no longer be 
+receiving 
+updates or bug fixes. Please switch to the 
+`google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-
+generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+2026-03-04 12:03:16,606 - llm.gemini_client 
+- WARNING - GOOGLE_API_KEY not set
+2026-03-04 12:03:16,824 - 
+utils.circuit_breaker - WARNING - Circuit 
+Breaker 'gemini': Failure count <MagicMock 
+name='mock.from_url().incr()' 
+id='2378141268496'>/3 (State: <MagicMock 
+name='mock.from_url().get()' 
+id='2378134818496'>)
+2026-03-04 12:03:16,824 - VerifyGemini - 
+ERROR - Error during Gemini call
+Traceback (most recent call last):
+  File "C:\Users\Luciano\Documents\Pragramac
+i¾n\Newsyx\ai-engine\utils\circuit_breaker.p
+y", line 112, in __call__
+    result = await func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Luciano\Documents\Pragramac
+i¾n\Newsyx\ai-engine\llm\gemini_client.py", 
+line 89, in _complete_structured_impl
+    raise Exception("GOOGLE_API_KEY is 
+missing")
+Exception: GOOGLE_API_KEY is missing
+
+During handling of the above exception, 
+another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Luciano\Documents\Pragramac
+i¾n\Newsyx\ai-engine\verify_gemini_connectio
+n.py", line 50, in test_connection
+    result = await 
+client.complete_structured(
+             
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\Luciano\Documents\Pragramac
+i¾n\Newsyx\ai-engine\llm\gemini_client.py", 
+line 44, in complete_structured
+    return await self.circuit_breaker(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\Luciano\Documents\Pragramac
+i¾n\Newsyx\ai-engine\utils\circuit_breaker.p
+y", line 136, in __call__
+    self.increment_failure()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Luciano\Documents\Pragramac
+i¾n\Newsyx\ai-engine\utils\circuit_breaker.p
+y", line 103, in increment_failure
+    if count >= self.failure_threshold or 
+state == "HALF-OPEN":
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: '>=' not supported between 
+instances of 'MagicMock' and 'int'
+
+--- GEMINI CONNECTIVITY VERIFICATION ---
+Client initialized with model: models/gemini-2.0-flash
+Sending request to Gemini (models/gemini-2.0-flash)...
+
+FAILED to receive response: '>=' not supported between instances of 'MagicMock' and 'int'
+
+--- VERIFICATION COMPLETE ---

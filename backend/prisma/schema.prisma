@@ -1,0 +1,358 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  passwordHash String         @map("password_hash")
+  name         String?
+  role         Role           @default(USER)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  analyses     NewsAnalysis[]
+  watchlists   Watchlist[]
+
+  @@map("users")
+}
+
+model RssFeed {
+  id              String    @id @default(uuid())
+  feedId          String    @unique @map("feed_id")
+  url             String    @unique
+  nombre          String
+  dominio         String
+  pais            String    @default("ES")
+  idioma          String    @default("es")
+  categoria       String?
+  activo          Boolean   @default(true)
+  esDefault       Boolean   @default(false) @map("es_default")
+  ultimaIngesta   DateTime? @map("ultima_ingesta")
+  errorCount      Int       @default(0) @map("error_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  // A1 · Sistema de Tiers de Fuentes
+  tier            Int       @default(3)            // 1=wire service, 2=nacional, 3=especializado, 4=agregador
+  propagandaRisk  Float     @default(0.3)          @map("propaganda_risk")  // 0.0–1.0
+  stateAffiliated Boolean   @default(false)        @map("state_affiliated")
+  politicalLean   String?                          @map("political_lean")   // "izquierda"|"centroizquierda"|"centro"|"centroderecha"|"derecha"
+  countryOrigin   String    @default("AR")         @map("country_origin")
+  reachScope      String    @default("nacional")   @map("reach_scope")      // "local"|"provincial"|"nacional"|"regional"|"global"
+
+  @@map("rss_feeds")
+}
+
+model NewsAnalysis {
+  id                String         @id @default(uuid())
+  urlHash           String         @unique @map("url_hash")
+  titleHash         String?        @map("title_hash")
+  url               String         @unique
+  urlCanonica       String?        @map("url_canonica")
+  slug              String?        @unique
+  titular           String
+  fuente            String
+  dominio           String
+  pais              String         @default("ES")
+  idioma            String         @default("es")
+  seccion           String?
+  categoria         String?
+  autor             String[]
+  fechaPublicacion  DateTime?      @map("fecha_publicacion")
+  fechaExtraccion   DateTime       @default(now()) @map("fecha_extraccion")
+  sentimientoLabel  String?        @map("sentimiento_label")
+  sentimientoScore  Float?         @map("sentimiento_score")
+  subjetividad      Float?
+  sesgoPolitico     String?        @map("sesgo_politico")
+  sesgoCon          Float?         @map("sesgo_confianza")
+  framingPrincipal  String?        @map("framing_principal")
+  esOpinion         Boolean        @default(false) @map("es_opinion")
+  esPatrocinado     Boolean        @default(false) @map("es_patrocinado")
+  tienPaywall       Boolean        @default(false) @map("tiene_paywall")
+  scoreCalidad      Float?         @map("score_calidad")
+  scoreDesin        Float?         @map("score_desinformacion")
+  scoreClickbait    Float?         @map("score_clickbait")
+  scoreSesgo        Float?         @map("score_sesgo")
+  scoreOriginalidad Float?         @map("score_originalidad")
+  scoreGlobal       Float?         @map("score_global")
+  status            AnalysisStatus @default(PENDING)
+  errorMessage      String?        @map("error_message")
+  processingMs      Int?           @map("processing_ms")
+  costoUsd          Float?         @map("costo_usd")
+  modeloLlm         String?        @map("modelo_llm")
+  sourceType        String?        @map("source_type")
+  sourceFeedId      String?        @map("source_feed_id")
+  analysisData      Json           @map("analysis_data")
+  geoIntelligence   Json?          @map("geo_intelligence")
+  temporalIntelligence Json?       @map("temporal_intelligence")
+  userId            String?        @map("user_id")
+  eventId           String?        @map("event_id")
+  imagenUrl         String?        @map("imagen_url")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+  event             NewsEvent?     @relation(fields: [eventId], references: [id])
+  user              User?          @relation(fields: [userId], references: [id])
+
+  @@index([fuente])
+  @@index([fechaPublicacion(sort: Desc)])
+  @@index([sentimientoLabel])
+  @@index([sesgoPolitico])
+  @@index([categoria])
+  @@index([sourceType])
+  @@index([titleHash])
+  @@index([status])
+  @@index([scoreGlobal])
+  @@map("news_analysis")
+}
+
+model NewsEvent {
+  id               String         @id @default(uuid())
+  eventId          String         @unique @map("event_id")
+  titulo           String
+  descripcion      String?
+  temaParague      String?        @map("tema_paraguas")
+  primeraCobertura DateTime?      @map("primera_cobertura")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  analyses         NewsAnalysis[]
+
+  @@map("news_events")
+}
+
+model Watchlist {
+  id          String   @id @default(uuid())
+  nombre      String
+  descripcion String?
+  queries     String[]
+  medios      String[]
+  activa      Boolean  @default(true)
+  frecuencia  Int      @default(30)
+  userId      String   @map("user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  alerts      Alert[]
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@map("watchlists")
+}
+
+model Alert {
+  id          String     @id @default(uuid())
+  tipo        String
+  descripcion String
+  leida       Boolean    @default(false)
+  analysisId  String?    @map("analysis_id")
+  watchlistId String?    @map("watchlist_id")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  watchlist   Watchlist? @relation(fields: [watchlistId], references: [id])
+
+  @@map("alerts")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AnalysisStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+model SystemConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_configs")
+}
+
+model FinancialSignal {
+  id        String   @id @default(uuid())
+  type      String   // "dolar_blue" | "riesgo_pais"
+  value     Float
+  metadata  Json?    // { status: "up", change: 2.0, sell: 1240 }
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([type, createdAt])
+  @@map("financial_signals")
+}
+
+model CountryScore {
+  id          String   @id @default(uuid())
+  country     String   @default("AR")
+  score       Float    // 0-100
+  components  Json     // { desinformacion: 0.3, sentimiento: 0.2, sesgo: 0.4, tension_geografica: 0.1 }
+  trend       String?  // "up" | "down" | "stable"
+  topDrivers  String[] @map("top_drivers")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([country, createdAt])
+  @@map("country_scores")
+}
+
+// ─── Twitter/X Intelligence Module ────────────────────────────────────────
+
+model TwitterProfile {
+  id              String   @id @default(uuid())
+  username        String   @unique              // sin @, ej: "BancoCentral_AR"
+  xUserId         String?  @unique @map("x_user_id")
+  displayName     String?  @map("display_name")
+  bio             String?
+  followersCount  Int?     @map("followers_count")
+  verifiedType    String?  @map("verified_type") // "blue"|"government"|"business"|null
+  profileImageUrl String?  @map("profile_image_url")
+
+  // Clasificación editorial
+  tier            String   @default("C")        // "S"|"A"|"B"|"C"
+  category        String   @default("analista") // "politico"|"funcionario"|"periodista"|"medio"|"organismo"|"economista"|"analista"
+  country         String   @default("AR")
+  politicalLean   String?  @map("political_lean")
+  isStateAffiliated Boolean @default(false) @map("is_state_affiliated")
+
+  // Config de scraping (todas editables desde frontend)
+  scrapeEnabled   Boolean  @default(true) @map("scrape_enabled")
+  scrapeInterval  Int      @default(15) @map("scrape_interval")  // minutos
+  scrapeRTs       Boolean  @default(false) @map("scrape_rts")
+  scrapeReplies   Boolean  @default(false) @map("scrape_replies")
+  minTweetLength  Int      @default(20) @map("min_tweet_length")
+
+  // Vinculación con Actor Network
+  actorNetworkSlug String? @map("actor_network_slug")
+
+  // Estado
+  lastScrapedAt   DateTime? @map("last_scraped_at")
+  lastTweetId     String?   @map("last_tweet_id")
+  consecutiveFails Int      @default(0) @map("consecutive_fails")
+  isActive        Boolean  @default(true) @map("is_active")
+  notes           String?
+
+  tweets          Tweet[]
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([tier, scrapeEnabled])
+  @@index([lastScrapedAt])
+  @@map("twitter_profiles")
+}
+
+model Tweet {
+  id              String   @id                  // tweet_id de X (string)
+  profileId       String   @map("profile_id")
+  profile         TwitterProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  rawContent      String   @map("raw_content")
+  lang            String?
+  tweetCreatedAt  DateTime @map("tweet_created_at")
+  url             String
+
+  // Engagement metrics
+  likeCount       Int      @default(0) @map("like_count")
+  retweetCount    Int      @default(0) @map("retweet_count")
+  replyCount      Int      @default(0) @map("reply_count")
+  quoteCount      Int      @default(0) @map("quote_count")
+  viewCount       Int?     @map("view_count")
+
+  // Type flags
+  isRetweet       Boolean  @default(false) @map("is_retweet")
+  isReply         Boolean  @default(false) @map("is_reply")
+  isQuote         Boolean  @default(false) @map("is_quote")
+  quotedTweetId   String?  @map("quoted_tweet_id")
+  inReplyToId     String?  @map("in_reply_to_id")
+
+  // Media
+  hasMedia        Boolean  @default(false) @map("has_media")
+  mediaUrls       Json?    @map("media_urls")
+
+  // Analysis status
+  analysisStatus  String   @default("pending") @map("analysis_status") // "pending"|"processing"|"done"|"skipped"|"error"
+  analysis        TweetAnalysis?
+
+  scrapedAt       DateTime @default(now()) @map("scraped_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([profileId, tweetCreatedAt])
+  @@index([analysisStatus])
+  @@index([tweetCreatedAt])
+  @@map("tweets")
+}
+
+model TweetAnalysis {
+  id              String   @id @default(uuid())
+  tweetId         String   @unique @map("tweet_id")
+  tweet           Tweet    @relation(fields: [tweetId], references: [id], onDelete: Cascade)
+
+  intencion       String                   // "informar"|"opinar"|"alarmar"|"movilizar"|"declarar"
+  esDeclaracionOficial Boolean @default(false) @map("es_declaracion_oficial")
+  impactoPotencial String  @map("impacto_potencial") // "bajo"|"medio"|"alto"|"critico"
+  sentimientoLabel String  @map("sentimiento_label")
+  sentimientoScore Float   @map("sentimiento_score")
+  scoreAlarmismo  Float    @map("score_alarmismo")
+  esOpinion       Boolean  @map("es_opinion")
+  verificabilidad String                   // "verificable"|"opinion"|"especulativo"
+
+  // Entities (JSONB)
+  keywords        Json
+  entidades       Json
+  geoRefs         Json     @map("geo_refs")
+  actoresRef      Json     @map("actores_ref")
+
+  // ITL/Focal Point signals
+  tagsItl         Json     @map("tags_itl")
+  contribuyeAlarm Float    @default(0) @map("contribuye_alarm")
+
+  // LLM context
+  resumen         String
+  alertas         Json
+  preguntaNoRespondida String? @map("pregunta_no_respondida")
+
+  procesadoEn     DateTime @default(now()) @map("procesado_en")
+
+  @@map("tweet_analyses")
+}
+
+model ScraperAccount {
+  id              String   @id @default(uuid())
+  username        String   @unique
+
+  isActive        Boolean  @default(true) @map("is_active")
+  isLoggedIn      Boolean  @default(false) @map("is_logged_in")
+  password        String?
+  email           String?
+  emailPassword   String?  @map("email_password")
+  cookies         String?  @db.Text
+  lastUsedAt      DateTime? @map("last_used_at")
+  totalRequests   Int      @default(0) @map("total_requests")
+  consecutiveFails Int     @default(0) @map("consecutive_fails")
+  errorMsg        String?  @map("error_msg")
+
+  // Circuit breaker
+  circuitOpen     Boolean  @default(false) @map("circuit_open")
+  circuitOpenAt   DateTime? @map("circuit_open_at")
+  circuitRetryAt  DateTime? @map("circuit_retry_at")
+
+  tier            String   @default("standard") // "standard"|"premium"
+  proxyUrl        String?  @map("proxy_url")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("scraper_accounts")
+}
+
+model LLMLog {
+  id           String   @id @default(uuid())
+  provider     String
+  model        String
+  status       String
+  latencyMs    Int      @map("latency_ms")
+  tokensIn     Int?     @map("tokens_in")
+  tokensOut    Int?     @map("tokens_out")
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("llm_logs")
+}

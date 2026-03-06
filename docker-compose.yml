@@ -1,0 +1,117 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: newsanalyzer
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 3600 1 --save 300 1000 --appendonly yes
+
+  g4f:
+    image: hlohaus789/g4f:latest
+    user: root
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "7900:7900"
+    shm_size: "2g"
+    volumes:
+      - ./ai-engine/har_and_cookies:/app/har_and_cookies
+      - ./ai-engine/generated_media:/app/generated_media
+    environment:
+      - G4F_COOKIES_DIR=/app/har_and_cookies
+
+  ai-engine:
+    build:
+      context: ./ai-engine
+    image: newsyx-ai-engine:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on: [ postgres, redis, g4f ]
+    volumes:
+      - ./ai-engine:/app
+    command: python -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  celery-worker:
+    image: newsyx-ai-engine:latest
+    restart: unless-stopped
+    env_file: .env
+    depends_on: [ postgres, redis, g4f ]
+    volumes:
+      - ./ai-engine:/app
+    command: >
+      python -m celery -A tasks.celery_tasks worker --concurrency=1 -Q high_priority,default,low_priority --loglevel=info
+
+  celery-beat:
+    image: newsyx-ai-engine:latest
+    restart: unless-stopped
+    env_file: .env
+    depends_on: [ redis ]
+    volumes:
+      - ./ai-engine:/app
+    command: python -m celery -A tasks.celery_tasks beat --loglevel=info
+
+  flower:
+    image: newsyx-ai-engine:latest
+    restart: unless-stopped
+    ports:
+      - "5555:5555"
+    env_file: .env
+    depends_on: [ redis ]
+    command: python -m celery -A tasks.celery_tasks flower --port=5555
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file: .env
+    depends_on: [ postgres, redis, ai-engine ]
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    command: sh -c "npm install && npx prisma generate && npx prisma migrate deploy && npm run dev"
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "5173:3000"
+    env_file: .env
+    depends_on: [ backend ]
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+  celery-twitter:
+    image: newsyx-ai-engine:latest
+    restart: unless-stopped
+    env_file: .env
+    depends_on: [ postgres, redis ]
+    volumes:
+      - ./ai-engine:/app
+      - twscrape_data:/data
+    command: >
+      python -m celery -A tasks.celery_tasks worker -Q twitter_scrape -c 1 --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:
+  twscrape_data:

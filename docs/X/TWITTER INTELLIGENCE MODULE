@@ -1,0 +1,1692 @@
+# 🐦 NEWSYX — X/TWITTER INTELLIGENCE MODULE
+## Roadmap de Implementación Enterprise
+
+> **Stack:** twscrape + FastAPI + Celery + Redis + PostgreSQL + React 18 + shadcn/ui  
+> **Scraper principal:** `vladkens/twscrape` v0.17.0 (2.2k ★, MIT, activamente mantenido en 2025)  
+> **Principio rector:** Los tweets de actores clave son señales de inteligencia primaria, no contenido secundario. Un tuit del BCRA o del Presidente es información antes de que llegue a los medios.
+
+---
+
+## ⚠️ ADVERTENCIA LEGAL Y OPERACIONAL
+
+> Antes de implementar, leer y aceptar:
+>
+> - El scraping de X/Twitter viola sus Términos de Servicio (ToS). twscrape lo documenta explícitamente.
+> - El riesgo operacional real es el **ban de las cuentas scraper**, no sanciones legales en el contexto de investigación/periodismo LATAM.
+> - Mitigación: pool de cuentas con cookies, proxies rotativos, rate limits conservadores, circuit breakers por cuenta.
+> - Para uso en producción: evaluar X API Basic ($100/mes, 10k tweets/mes) como alternativa legal si el negocio lo justifica.
+> - Este roadmap implementa la solución de scraping con todas las mitigaciones de riesgo posibles.
+
+---
+
+## ÍNDICE
+
+- [Arquitectura General](#1-arquitectura-general)
+- [Fase 1 — Scraping Engine](#2-fase-1--scraping-engine-semana-1-2)
+- [Fase 2 — Pipeline de Análisis](#3-fase-2--pipeline-de-análisis-semana-2-3)
+- [Fase 3 — Integración al Feed](#4-fase-3--integración-al-feed-semana-3-4)
+- [Fase 4 — Señales de Inteligencia](#5-fase-4--señales-de-inteligencia-semana-4-5)
+- [Fase 5 — Admin Panel](#6-fase-5--admin-panel-semana-5)
+- [Apéndice: Schemas Completos](#7-apéndice-schemas-completos)
+
+---
+
+## 1. ARQUITECTURA GENERAL
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ADMIN PANEL (React)                       │
+│  Gestión de perfiles · Account health · Queue monitor       │
+└────────────────────────────┬────────────────────────────────┘
+                             │ REST API
+┌────────────────────────────▼────────────────────────────────┐
+│                  NODE.JS BACKEND (Express)                   │
+│  CRUD perfiles monitoreados · Endpoints feed · Auth         │
+└──────┬─────────────────────────────────┬────────────────────┘
+       │ Prisma / PostgreSQL             │ Redis Pub/Sub
+┌──────▼──────────┐          ┌──────────▼────────────────────┐
+│   PostgreSQL    │          │         REDIS                  │
+│  TwitterProfile │          │  • Queue: tweet_scrape         │
+│  Tweet          │          │  • Cache: account_health       │
+│  TweetAnalysis  │          │  • Pub/Sub: new_tweets         │
+│  AccountPool    │          │  • Welford state (tweets)      │
+└─────────────────┘          └──────────┬────────────────────┘
+                                        │ Celery tasks
+┌───────────────────────────────────────▼────────────────────┐
+│                   FASTAPI AI ENGINE                         │
+│  ┌─────────────────┐    ┌──────────────────────────────┐   │
+│  │  twscrape Pool  │    │     Tweet Analysis LLM       │   │
+│  │  5-10 accounts  │    │  (Gemini Flash — slim schema) │   │
+│  │  Cookie-based   │    │                              │   │
+│  │  Circuit breaker│    │  + spaCy NER                 │   │
+│  │  Health monitor │    │  + pysentimiento              │   │
+│  └────────┬────────┘    └──────────────────────────────┘   │
+│           │ Celery Beat (scheduled scraping)                │
+│  ┌────────▼────────────────────────────────────────────┐   │
+│  │              PRIORITY SCRAPE QUEUE                  │   │
+│  │  S: Organismos oficiales — cada 5 min               │   │
+│  │  A: Políticos / Funcionarios — cada 10 min          │   │
+│  │  B: Periodistas / Medios — cada 15 min              │   │
+│  │  C: Economistas / Analistas — cada 30 min           │   │
+│  └────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────┘
+                             │ WebSocket (existing)
+┌────────────────────────────▼───────────────────────────────┐
+│              SITUATION MONITOR (React Frontend)             │
+│  EventFeed ← TweetCard · TweetAnalysisPanel                │
+│  ITL Widget ← tweet signals · Focal Points ← tweet signals │
+└────────────────────────────────────────────────────────────┘
+```
+
+### Cadena de fallback del scraper
+
+```
+twscrape (primary, GraphQL)
+    │ Si NoAccountError o rate limit global
+    ▼
+Scweet (secondary, cursor_handoff)
+    │ Si falla también
+    ▼
+Cola diferida (reintentar en 30 min con twscrape)
+    │ Si falla 3 veces
+    ▼
+Gap de inteligencia registrado → alerta en Intelligence Gap Tracker
+```
+
+---
+
+## 2. FASE 1 — Scraping Engine
+### Semana 1–2
+
+---
+
+### 1.1 · Schema Prisma — Tablas nuevas
+
+```prisma
+// Agregar a schema.prisma
+
+// ─── Perfil monitoreado ────────────────────────────────────────
+model TwitterProfile {
+  id              String   @id @default(cuid())
+  username        String   @unique          // sin @, ej: "BancoCentral_AR"
+  xUserId         String?  @unique          // ID numérico de X, resuelto al primer scrape
+  displayName     String?
+  bio             String?
+  followersCount  Int?
+  verifiedType    String?                   // "blue"|"government"|"business"|null
+  profileImageUrl String?
+
+  // Clasificación editorial
+  tier            String   @default("C")    // "S"|"A"|"B"|"C"
+  category        String                   // "politico"|"funcionario"|"periodista"|"medio"|"organismo"|"economista"|"analista"
+  country         String   @default("AR")
+  politicalLean   String?                  // mismo vocab que Source
+  isStateAffiliated Boolean @default(false)
+
+  // Config de scraping
+  scrapeEnabled   Boolean  @default(true)
+  scrapeInterval  Int      @default(15)    // minutos, overrides tier default
+  scrapeRTs       Boolean  @default(false) // incluir retweets
+  scrapeReplies   Boolean  @default(false) // incluir replies
+  minTweetLength  Int      @default(20)    // filtrar tweets muy cortos
+  
+  // Vinculación con Actor Network existente
+  actorNetworkSlug String? // slug del actor en actor_network de los análisis LLM
+
+  // Estado
+  lastScrapedAt   DateTime?
+  lastTweetId     String?   // cursor: ID del último tweet scrapeado
+  consecutiveFails Int      @default(0)
+  isActive        Boolean  @default(true)
+  notes           String?  // notas del admin
+
+  tweets          Tweet[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tier, scrapeEnabled])
+  @@index([lastScrapedAt])
+}
+
+// ─── Tweet crudo + analizado ──────────────────────────────────
+model Tweet {
+  id              String   @id             // tweet_id de X (string para evitar overflow)
+  profileId       String
+  profile         TwitterProfile @relation(fields: [profileId], references: [id])
+
+  // Contenido raw
+  rawContent      String                   // texto completo sin procesar
+  lang            String?                  // "es"|"en"|null
+  createdAt       DateTime                 // fecha del tweet original
+  url             String                   // https://x.com/user/status/ID
+
+  // Métricas de engagement (snapshot al momento del scrape)
+  likeCount       Int      @default(0)
+  retweetCount    Int      @default(0)
+  replyCount      Int      @default(0)
+  quoteCount      Int      @default(0)
+  viewCount       Int?
+
+  // Tipo
+  isRetweet       Boolean  @default(false)
+  isReply         Boolean  @default(false)
+  isQuote         Boolean  @default(false)
+  quotedTweetId   String?
+  inReplyToId     String?
+
+  // Media
+  hasMedia        Boolean  @default(false)
+  mediaUrls       Json?                    // string[]
+
+  // Estado de análisis
+  analysisStatus  String   @default("pending") // "pending"|"processing"|"done"|"skipped"|"error"
+  analysis        TweetAnalysis?
+
+  scrapedAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([profileId, createdAt])
+  @@index([analysisStatus])
+  @@index([createdAt])
+}
+
+// ─── Análisis LLM del tweet ───────────────────────────────────
+model TweetAnalysis {
+  id              String   @id @default(cuid())
+  tweetId         String   @unique
+  tweet           Tweet    @relation(fields: [tweetId], references: [id])
+
+  // Resultados del análisis (ver schema JSON completo más adelante)
+  intencion       String                   // "informar"|"opinar"|"alarmar"|"movilizar"|"declarar"
+  esDeclaracionOficial Boolean @default(false)
+  impactoPotencial String                  // "bajo"|"medio"|"alto"|"critico"
+  sentimientoLabel String                  // "POS"|"NEG"|"NEU"
+  sentimientoScore Float
+  scoreAlarmismo  Float
+  esOpinion       Boolean
+  verificabilidad String                   // "verificable"|"opinion"|"especulativo"
+
+  // Entidades (JSONB)
+  keywords        Json                     // string[]
+  entidades       Json                     // [{texto, tipo, slug}]
+  geoRefs         Json                     // [{nombre, lat, lon, confianza}]
+  actoresRef      Json                     // [{slug, relacion}] — links al actor_network
+
+  // Señales para ITL/Focal Points
+  tagsItl         Json                     // string[] — tags temáticos para el ITL
+  contribuyeAlarm Float    @default(0)     // 0.0–1.0, señal para Welford
+
+  // Contexto LLM
+  resumen         String                   // 1 frase
+  alertas         Json                     // [{tipo, descripcion, severidad}]
+  preguntaNoRespondida String?
+
+  procesadoEn     DateTime @default(now())
+}
+
+// ─── Pool de cuentas scraper ──────────────────────────────────
+model ScraperAccount {
+  id              String   @id @default(cuid())
+  username        String   @unique
+  // NOTA: password, email, cookies se guardan en vars de entorno
+  // o en un secret manager, NO en la DB.
+  
+  isActive        Boolean  @default(true)
+  isLoggedIn      Boolean  @default(false)
+  lastUsedAt      DateTime?
+  totalRequests   Int      @default(0)
+  consecutiveFails Int     @default(0)
+  errorMsg        String?
+  
+  // Circuit breaker
+  circuitOpen     Boolean  @default(false)
+  circuitOpenAt   DateTime?
+  circuitRetryAt  DateTime?  // cuándo reintentar
+
+  tier            String   @default("standard") // "standard"|"premium" (si tenés cuentas con más límites)
+  proxyUrl        String?  // proxy asignado a esta cuenta
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+```
+
+---
+
+### 1.2 · Account Pool Manager (AI Engine)
+
+```python
+# /ai_engine/services/twitter/account_pool.py
+"""
+Gestiona el pool de cuentas scraper con circuit breaker por cuenta.
+twscrape maneja la rotación automática, pero este manager agrega:
+- Health tracking persistente en Redis
+- Circuit breaker con cooldown configurable
+- Alertas cuando el pool queda degradado
+"""
+import asyncio
+import json
+from datetime import datetime, timedelta
+from twscrape import API as TwscrapeAPI
+from app.redis_client import redis
+from app.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+CIRCUIT_COOLDOWN_MINUTES = 30
+POOL_DEGRADED_THRESHOLD = 0.5  # Alerta si <50% de cuentas activas
+
+class AccountPoolManager:
+    def __init__(self):
+        self.api = TwscrapeAPI(settings.TWSCRAPE_DB_PATH)
+        self._initialized = False
+
+    async def initialize(self):
+        """Carga las cuentas desde variables de entorno al inicializar."""
+        if self._initialized:
+            return
+
+        # Las cuentas se definen en env como JSON array
+        # TWITTER_SCRAPER_ACCOUNTS=[{"username":"u1","cookies":"..."},...]
+        accounts = json.loads(settings.TWITTER_SCRAPER_ACCOUNTS)
+
+        for acc in accounts:
+            await self.api.pool.add_account(
+                username=acc["username"],
+                password=acc.get("password", ""),
+                email=acc.get("email", ""),
+                email_password=acc.get("email_password", ""),
+                cookies=acc.get("cookies"),
+                proxy=acc.get("proxy"),
+            )
+
+        self._initialized = True
+        logger.info(f"[AccountPool] {len(accounts)} accounts loaded")
+
+    async def get_health_report(self) -> dict:
+        """Estado actual del pool para el admin panel."""
+        accounts = await self.api.pool.accounts_info()
+        total = len(accounts)
+        active = sum(1 for a in accounts if a.active and a.logged_in)
+        circuit_open = sum(1 for a in accounts if not a.active)
+
+        health = {
+            "total": total,
+            "active": active,
+            "circuit_open": circuit_open,
+            "health_pct": round(active / total * 100 if total else 0, 1),
+            "degraded": active / total < POOL_DEGRADED_THRESHOLD if total else True,
+            "accounts": [
+                {
+                    "username": a.username,
+                    "active": a.active,
+                    "logged_in": a.logged_in,
+                    "last_used": a.last_used.isoformat() if a.last_used else None,
+                    "total_req": a.total_req,
+                    "error": a.error_msg,
+                }
+                for a in accounts
+            ],
+        }
+
+        # Guardar en Redis para el frontend
+        await redis.setex("twitter:pool:health", 60, json.dumps(health))
+
+        # Alerta si pool degradado
+        if health["degraded"]:
+            await redis.publish("situation_monitor:alerts", json.dumps({
+                "type": "pool_degraded",
+                "payload": {
+                    "tipo": "twitter_pool_degradado",
+                    "descripcion": f"Solo {active}/{total} cuentas scraper activas",
+                    "severidad": "danger" if active == 0 else "warning",
+                    "accion_sugerida": "verificar_fuente",
+                }
+            }))
+
+        return health
+
+    async def relogin_failed(self):
+        """Reintentar login de cuentas fallidas. Llamar desde admin panel."""
+        await self.api.pool.relogin_failed()
+        logger.info("[AccountPool] Relogin attempted for failed accounts")
+
+
+# Singleton
+pool_manager = AccountPoolManager()
+```
+
+---
+
+### 1.3 · Scrape Tasks (Celery)
+
+```python
+# /ai_engine/tasks/twitter_scraper.py
+import asyncio
+from datetime import datetime, timedelta
+from contextlib import aclosing
+from celery import shared_task
+from twscrape import gather
+from app.services.twitter.account_pool import pool_manager
+from app.db import prisma
+from app.redis_client import redis
+import logging, json
+
+logger = logging.getLogger(__name__)
+
+# ─── Intervalos por tier ──────────────────────────────────────────────
+TIER_INTERVALS = {
+    "S": 5,   # Organismos oficiales (BCRA, Presidencia, etc.)
+    "A": 10,  # Políticos y funcionarios
+    "B": 15,  # Periodistas y medios
+    "C": 30,  # Economistas y analistas
+}
+
+TWEETS_PER_SCRAPE = 20  # máximo por sesión de scraping por perfil
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=300)
+def scrape_profile_tweets(self, profile_id: str):
+    """
+    Scrape tweets de un perfil y encolar para análisis.
+    Se programa dinámicamente desde el scheduler según el tier.
+    """
+    asyncio.run(_scrape_profile_tweets_async(self, profile_id))
+
+
+async def _scrape_profile_tweets_async(task, profile_id: str):
+    profile = await prisma.twitterprofile.find_unique(where={"id": profile_id})
+    if not profile or not profile.scrapeEnabled:
+        return
+
+    await pool_manager.initialize()
+
+    try:
+        # Resolver xUserId si no lo tenemos (solo primera vez)
+        if not profile.xUserId:
+            user = await pool_manager.api.user_by_login(profile.username)
+            if not user:
+                logger.warning(f"[Scraper] User not found: @{profile.username}")
+                return
+            await prisma.twitterprofile.update(
+                where={"id": profile_id},
+                data={"xUserId": str(user.id), "displayName": user.displayName,
+                      "followersCount": user.followersCount,
+                      "verifiedType": str(user.blue) if user.blue else None}
+            )
+            profile.xUserId = str(user.id)
+
+        # Obtener tweets nuevos (desde el último ID conocido)
+        new_tweets = []
+        since_id = int(profile.lastTweetId) if profile.lastTweetId else None
+
+        async with aclosing(
+            pool_manager.api.user_tweets(int(profile.xUserId), limit=TWEETS_PER_SCRAPE)
+        ) as gen:
+            async for tweet in gen:
+                # Parar si llegamos a tweets ya procesados
+                if since_id and tweet.id <= since_id:
+                    break
+
+                # Filtros de calidad
+                if not _passes_quality_filters(tweet, profile):
+                    continue
+
+                new_tweets.append(tweet)
+
+        if not new_tweets:
+            logger.debug(f"[Scraper] No new tweets for @{profile.username}")
+            return
+
+        # Persistir en DB (upsert para evitar duplicados)
+        saved_count = 0
+        for tweet in new_tweets:
+            try:
+                await prisma.tweet.upsert(
+                    where={"id": str(tweet.id)},
+                    create=_tweet_to_prisma(tweet, profile_id),
+                    update={"likeCount": tweet.likeCount,
+                            "retweetCount": tweet.retweetCount,
+                            "viewCount": tweet.viewCount},
+                )
+                saved_count += 1
+            except Exception as e:
+                logger.error(f"[Scraper] Error saving tweet {tweet.id}: {e}")
+
+        # Actualizar cursor y stats del perfil
+        if new_tweets:
+            await prisma.twitterprofile.update(
+                where={"id": profile_id},
+                data={
+                    "lastTweetId": str(new_tweets[0].id),  # más reciente
+                    "lastScrapedAt": datetime.utcnow(),
+                    "consecutiveFails": 0,
+                }
+            )
+
+        logger.info(f"[Scraper] @{profile.username}: {saved_count} new tweets saved")
+
+        # Publicar en Redis → WebSocket → Frontend (breaking tweets de tier S/A)
+        if profile.tier in ("S", "A") and new_tweets:
+            for tweet in new_tweets[:3]:  # máximo 3 por perfil por ciclo
+                await _publish_breaking_tweet(tweet, profile)
+
+    except Exception as exc:
+        # Incrementar fail counter
+        await prisma.twitterprofile.update(
+            where={"id": profile_id},
+            data={"consecutiveFails": {"increment": 1}}
+        )
+
+        logger.error(f"[Scraper] Error scraping @{profile.username}: {exc}")
+
+        # Reintentar con backoff
+        raise task.retry(exc=exc, countdown=60 * (task.request.retries + 1))
+
+
+def _passes_quality_filters(tweet, profile) -> bool:
+    """Filtros de calidad antes de persistir."""
+    # Filtrar retweets si no está configurado
+    if tweet.retweetedTweet and not profile.scrapeRTs:
+        return False
+    # Filtrar replies si no está configurado
+    if tweet.inReplyToTweetId and not profile.scrapeReplies:
+        return False
+    # Longitud mínima
+    if len(tweet.rawContent) < profile.minTweetLength:
+        return False
+    # Solo español o indefinido (para perfiles LATAM)
+    if tweet.lang and tweet.lang not in ("es", "und"):
+        return False
+    return True
+
+
+def _tweet_to_prisma(tweet, profile_id: str) -> dict:
+    """Convierte modelo twscrape.Tweet a dict para Prisma."""
+    return {
+        "id": str(tweet.id),
+        "profileId": profile_id,
+        "rawContent": tweet.rawContent,
+        "lang": tweet.lang,
+        "createdAt": tweet.date,
+        "url": tweet.url,
+        "likeCount": tweet.likeCount or 0,
+        "retweetCount": tweet.retweetCount or 0,
+        "replyCount": tweet.replyCount or 0,
+        "quoteCount": tweet.quoteCount or 0,
+        "viewCount": tweet.viewCount,
+        "isRetweet": bool(tweet.retweetedTweet),
+        "isReply": bool(tweet.inReplyToTweetId),
+        "isQuote": bool(tweet.quotedTweet),
+        "quotedTweetId": str(tweet.quotedTweet.id) if tweet.quotedTweet else None,
+        "inReplyToId": str(tweet.inReplyToTweetId) if tweet.inReplyToTweetId else None,
+        "hasMedia": bool(tweet.media),
+        "analysisStatus": "pending",
+    }
+
+
+async def _publish_breaking_tweet(tweet, profile):
+    """Publica tweet relevante al WebSocket para alert inmediata."""
+    await redis.publish("situation_monitor:alerts", json.dumps({
+        "type": "new_tweet",
+        "payload": {
+            "tweet_id": str(tweet.id),
+            "username": profile.username,
+            "display_name": profile.displayName or profile.username,
+            "tier": profile.tier,
+            "category": profile.category,
+            "content_preview": tweet.rawContent[:120],
+            "url": tweet.url,
+            "timestamp": tweet.date.isoformat(),
+        }
+    }))
+```
+
+---
+
+### 1.4 · Scheduler Dinámico (Celery Beat)
+
+```python
+# /ai_engine/tasks/twitter_scheduler.py
+"""
+En lugar de configurar Celery Beat estáticamente,
+este scheduler corre cada minuto y decide qué perfiles
+deben ser scrapeados en este ciclo según su tier e
+intervalo configurado.
+"""
+from celery import shared_task
+from datetime import datetime, timedelta
+from app.db import prisma
+from .twitter_scraper import scrape_profile_tweets
+import logging
+
+logger = logging.getLogger(__name__)
+
+TIER_INTERVALS = {"S": 5, "A": 10, "B": 15, "C": 30}
+
+
+@shared_task
+def dispatch_scrape_jobs():
+    """
+    Corre cada minuto (configurado en Celery Beat).
+    Determina qué perfiles necesitan ser scrapeados y
+    los encola con la prioridad correcta.
+    """
+    import asyncio
+    asyncio.run(_dispatch_async())
+
+
+async def _dispatch_async():
+    now = datetime.utcnow()
+
+    # Traer todos los perfiles activos
+    profiles = await prisma.twitterprofile.find_many(
+        where={"scrapeEnabled": True, "isActive": True, "consecutiveFails": {"lt": 5}}
+    )
+
+    dispatched = 0
+    for profile in profiles:
+        interval_min = profile.scrapeInterval or TIER_INTERVALS.get(profile.tier, 30)
+        next_scrape = (profile.lastScrapedAt or datetime.min) + timedelta(minutes=interval_min)
+
+        if now >= next_scrape:
+            # Prioridad Celery: menor número = mayor prioridad
+            priority = {"S": 1, "A": 3, "B": 5, "C": 7}.get(profile.tier, 5)
+            scrape_profile_tweets.apply_async(
+                args=[profile.id],
+                priority=priority,
+                queue="twitter_scrape",
+            )
+            dispatched += 1
+
+    if dispatched:
+        logger.info(f"[Scheduler] Dispatched {dispatched} scrape jobs")
+
+
+# En celery.py / settings:
+# CELERYBEAT_SCHEDULE = {
+#     "dispatch-scrape-jobs": {
+#         "task": "tasks.twitter_scheduler.dispatch_scrape_jobs",
+#         "schedule": crontab(minute="*"),  # cada minuto
+#     },
+#     "analyze-pending-tweets": {
+#         "task": "tasks.tweet_analyzer.analyze_pending_tweets",
+#         "schedule": crontab(minute="*/2"),  # cada 2 minutos
+#     },
+# }
+```
+
+---
+
+## 3. FASE 2 — Pipeline de Análisis
+### Semana 2–3
+
+---
+
+### 2.1 · Schema de Análisis LLM para Tweets
+
+> Los tweets tienen máx. 280 chars. El schema de análisis de artículos es demasiado extenso.  
+> Este schema slim captura lo esencial para el Situation Monitor sin desperdiciar tokens.
+
+```python
+"""
+PROMPT PARA ANÁLISIS DE TWEETS — Newsyx Intelligence Engine v2
+
+Eres un analista de inteligencia política especializado en América Latina.
+Tu tarea es analizar tweets de actores relevantes (políticos, funcionarios,
+periodistas, organismos oficiales, economistas) y extraer señales de
+inteligencia estructurada.
+
+Los tweets son cortos — analiza con precisión, sin sobreinterpretar.
+Produce EXCLUSIVAMENTE un objeto JSON válido. Sin markdown fuera del JSON.
+null para campos donde tu confianza sea < 0.6.
+
+PERFIL DEL AUTOR:
+- Username: @{username}
+- Nombre: {display_name}
+- Categoría: {category}
+- Tier: {tier} (S=organismo oficial, A=político/funcionario, B=periodista/medio, C=analista)
+- Orientación conocida: {political_lean}
+- ¿Es afiliado estatal?: {is_state_affiliated}
+
+TWEET A ANALIZAR:
+"{raw_content}"
+
+Fecha: {created_at}
+Engagement: {likes} likes · {retweets} RTs · {replies} replies
+
+SCHEMA REQUERIDO:
+{
+  "intencion": "informar|opinar|alarmar|movilizar|declarar|amenazar|desmentir",
+  "es_declaracion_oficial": false,
+  "impacto_potencial": "bajo|medio|alto|critico",
+  "sentimientoLabel": "POS|NEG|NEU",
+  "sentimientoScore": 0.00,
+  "scoreAlarmismo": 0.00,
+  "es_opinion": false,
+  "verificabilidad": "verificable|opinion|especulativo",
+  "resumen": "Una frase. Qué dice y por qué importa.",
+  "keywords": ["string"],
+  "entidades": [
+    {
+      "texto": "string — literal del tweet",
+      "tipo": "persona|organizacion|lugar|instrumento_financiero|concepto",
+      "slug": "string-slug",
+      "accion": "menciona|critica|defiende|anuncia|amenaza|desmiente"
+    }
+  ],
+  "geo_refs": [
+    {
+      "nombre": "string",
+      "tipo": "pais|region|ciudad|institucion",
+      "lat": 0.00,
+      "lon": 0.00,
+      "confianza": 0.00
+    }
+  ],
+  "actores_ref": [
+    {
+      "slug": "string — slug del actor referenciado",
+      "relacion": "menciona|critica|defiende|responde_a|acusa"
+    }
+  ],
+  "tags_itl": ["string — tags temáticos para el ITL: economía|política|seguridad|etc."],
+  "contribuye_alarmismo": 0.00,
+  "alertas": [
+    {
+      "tipo": "string",
+      "descripcion": "string",
+      "severidad": "info|warning|danger|critical"
+    }
+  ],
+  "pregunta_no_respondida": "string o null"
+}
+
+REGLAS:
+- es_declaracion_oficial = true solo si el autor es tier S (organismo oficial) Y el tweet anuncia una medida, dato o posición institucional.
+- impacto_potencial = "critico" solo si: organismo oficial anuncia medida económica OR político anuncia decisión de gobierno OR hay contradicción con declaración oficial previa.
+- contribuye_alarmismo: señal numérica 0.0–1.0 que alimenta el Índice de Tensión. 1.0 = tweet que activamente genera pánico o escalada.
+- No inventes entidades ni geo_refs. Solo lo que está explícitamente en el texto.
+- Si el tweet es un retweet sin comentario, intencion = "informar" y es_opinion = false.
+"""
+```
+
+---
+
+### 2.2 · Task de Análisis
+
+```python
+# /ai_engine/tasks/tweet_analyzer.py
+from celery import shared_task
+from datetime import datetime
+import json, logging
+from app.db import prisma
+from app.services.llm import call_gemini
+from app.services.nlp import spacy_ner, pysentimiento_analyze
+
+logger = logging.getLogger(__name__)
+
+BATCH_SIZE = 10  # tweets a analizar por ciclo
+
+
+@shared_task
+def analyze_pending_tweets():
+    """Analiza tweets pendientes en lotes. Corre cada 2 minutos."""
+    import asyncio
+    asyncio.run(_analyze_pending_async())
+
+
+async def _analyze_pending_async():
+    # Traer tweets pendientes ordenados por tier del perfil (S primero)
+    pending = await prisma.tweet.find_many(
+        where={"analysisStatus": "pending"},
+        include={"profile": True},
+        order_by=[
+            {"profile": {"tier": "asc"}},  # S < A < B < C alfabéticamente
+            {"createdAt": "desc"},
+        ],
+        take=BATCH_SIZE,
+    )
+
+    if not pending:
+        return
+
+    for tweet in pending:
+        await _analyze_single_tweet(tweet)
+
+
+async def _analyze_single_tweet(tweet):
+    try:
+        # Marcar como procesando
+        await prisma.tweet.update(
+            where={"id": tweet.id},
+            data={"analysisStatus": "processing"}
+        )
+
+        profile = tweet.profile
+
+        # ─── spaCy NER rápido ─────────────────────────────────
+        entities_spacy = spacy_ner(tweet.rawContent)
+
+        # ─── pysentimiento ────────────────────────────────────
+        sentiment = pysentimiento_analyze(tweet.rawContent)
+
+        # ─── LLM (Gemini Flash) ───────────────────────────────
+        prompt = build_tweet_prompt(tweet, profile)
+        llm_result = await call_gemini(prompt, max_tokens=800)
+        analysis = json.loads(llm_result)
+
+        # ─── Merge NLP + LLM ──────────────────────────────────
+        # pysentimiento overrides LLM si confianza > 0.8
+        if sentiment["confidence"] > 0.8:
+            analysis["sentimientoLabel"] = sentiment["label"]
+            analysis["sentimientoScore"] = sentiment["score"]
+
+        # ─── Persistir ───────────────────────────────────────
+        await prisma.tweetanalysis.upsert(
+            where={"tweetId": tweet.id},
+            create={
+                "tweetId": tweet.id,
+                "intencion": analysis.get("intencion", "informar"),
+                "esDeclaracionOficial": analysis.get("es_declaracion_oficial", False),
+                "impactoPotencial": analysis.get("impacto_potencial", "bajo"),
+                "sentimientoLabel": analysis.get("sentimientoLabel", "NEU"),
+                "sentimientoScore": analysis.get("sentimientoScore", 0.5),
+                "scoreAlarmismo": analysis.get("scoreAlarmismo", 0.0),
+                "esOpinion": analysis.get("es_opinion", False),
+                "verificabilidad": analysis.get("verificabilidad", "opinion"),
+                "resumen": analysis.get("resumen", ""),
+                "keywords": json.dumps(analysis.get("keywords", [])),
+                "entidades": json.dumps(analysis.get("entidades", [])),
+                "geoRefs": json.dumps(analysis.get("geo_refs", [])),
+                "actoresRef": json.dumps(analysis.get("actores_ref", [])),
+                "tagsItl": json.dumps(analysis.get("tags_itl", [])),
+                "contribuyeAlarm": analysis.get("contribuye_alarmismo", 0.0),
+                "alertas": json.dumps(analysis.get("alertas", [])),
+                "preguntaNoRespondida": analysis.get("pregunta_no_respondida"),
+            },
+            update={}
+        )
+
+        await prisma.tweet.update(
+            where={"id": tweet.id},
+            data={"analysisStatus": "done"}
+        )
+
+        # ─── Actualizar señales downstream ───────────────────
+        # Actualizar Welford con contribuye_alarmismo
+        from app.services.welford_tracker import tracker
+        for tag in analysis.get("tags_itl", []):
+            tracker.update(tag, analysis.get("contribuye_alarmismo", 0))
+
+        logger.debug(f"[Analyzer] Tweet {tweet.id} analyzed: {analysis.get('impacto_potencial')}")
+
+    except Exception as e:
+        await prisma.tweet.update(
+            where={"id": tweet.id},
+            data={"analysisStatus": "error"}
+        )
+        logger.error(f"[Analyzer] Error analyzing tweet {tweet.id}: {e}")
+
+
+def build_tweet_prompt(tweet, profile) -> str:
+    return f"""
+PERFIL DEL AUTOR:
+- Username: @{profile.username}
+- Nombre: {profile.displayName or profile.username}
+- Categoría: {profile.category}
+- Tier: {profile.tier}
+- Orientación conocida: {profile.politicalLean or "No determinada"}
+- ¿Es afiliado estatal?: {"Sí" if profile.isStateAffiliated else "No"}
+
+TWEET A ANALIZAR:
+"{tweet.rawContent}"
+
+Fecha: {tweet.createdAt.strftime("%Y-%m-%d %H:%M UTC")}
+Engagement: {tweet.likeCount} likes · {tweet.retweetCount} RTs · {tweet.replyCount} replies
+
+[SCHEMA REQUERIDO como arriba]
+"""
+```
+
+---
+
+## 4. FASE 3 — Integración al Feed
+### Semana 3–4
+
+---
+
+### 3.1 · Endpoint del Feed Unificado (Node.js)
+
+```typescript
+// /src/routes/situationMonitor.ts
+// Extender el endpoint existente para incluir tweets
+
+router.get('/situation-monitor', authenticate, async (req, res) => {
+  const filters = situationMonitorFiltersSchema.parse(req.query);
+
+  const [
+    articulos,
+    tweets,
+    clusters,
+    stats,
+    gaps,
+    itlScores,
+    focalPoints,
+  ] = await Promise.all([
+    getArticleEvents(filters),
+    getTweetEvents(filters),        // NUEVO
+    getClusters(filters),
+    getStats(filters),
+    getIntelligenceGaps(),
+    getITLScores(),
+    getFocalPoints(filters),
+  ]);
+
+  // Mezclar y ordenar por timestamp
+  const unifiedFeed = [...articulos, ...tweets]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  res.json({ feed: unifiedFeed, clusters, stats, gaps, itlScores, focalPoints });
+});
+
+
+async function getTweetEvents(filters: SituationFilters): Promise<FeedItem[]> {
+  const where: Prisma.TweetWhereInput = {
+    analysisStatus: 'done',
+    createdAt: {
+      gte: filters.fechaDesde ? new Date(filters.fechaDesde) : subHours(new Date(), 24),
+      lte: filters.fechaHasta ? new Date(filters.fechaHasta) : new Date(),
+    },
+    // Filtro por lugar si está activo
+    ...(filters.lugaresIds.length ? {
+      analysis: {
+        geoRefs: { path: '$[*].nombre', array_contains: filters.lugaresIds }
+      }
+    } : {}),
+    // Filtro por score de impacto
+    ...(filters.soloHechosCentrales ? {
+      analysis: { impactoPotencial: { in: ['alto', 'critico'] } }
+    } : {}),
+  };
+
+  const tweets = await prisma.tweet.findMany({
+    where,
+    include: { profile: true, analysis: true },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+
+  return tweets.map(tweet => ({
+    type: 'tweet' as const,
+    timestamp: tweet.createdAt.toISOString(),
+    data: normalizeTweetForFeed(tweet),
+  }));
+}
+
+
+function normalizeTweetForFeed(tweet: TweetWithRelations): FeedTweet {
+  const analysis = tweet.analysis;
+  return {
+    // Metadata del contenido
+    id: tweet.id,
+    type: 'tweet',
+    content: tweet.rawContent,
+    url: tweet.url,
+    timestamp: tweet.createdAt.toISOString(),
+
+    // Perfil del autor
+    author: {
+      username: tweet.profile.username,
+      displayName: tweet.profile.displayName || tweet.profile.username,
+      tier: tweet.profile.tier,
+      category: tweet.profile.category,
+      verifiedType: tweet.profile.verifiedType,
+      profileImageUrl: tweet.profile.profileImageUrl,
+      isStateAffiliated: tweet.profile.isStateAffiliated,
+      actorNetworkSlug: tweet.profile.actorNetworkSlug,
+    },
+
+    // Engagement
+    engagement: {
+      likes: tweet.likeCount,
+      retweets: tweet.retweetCount,
+      replies: tweet.replyCount,
+      views: tweet.viewCount,
+    },
+
+    // Análisis (si está disponible)
+    analysis: analysis ? {
+      intencion: analysis.intencion,
+      esDeclaracionOficial: analysis.esDeclaracionOficial,
+      impactoPotencial: analysis.impactoPotencial,
+      sentimientoLabel: analysis.sentimientoLabel,
+      sentimientoScore: analysis.sentimientoScore,
+      scoreAlarmismo: analysis.scoreAlarmismo,
+      verificabilidad: analysis.verificabilidad,
+      resumen: analysis.resumen,
+      keywords: JSON.parse(analysis.keywords as string),
+      entidades: JSON.parse(analysis.entidades as string),
+      geoRefs: JSON.parse(analysis.geoRefs as string),
+      alertas: JSON.parse(analysis.alertas as string),
+    } : null,
+
+    // Para el mapa
+    lugar: analysis ? extractPrimaryGeo(JSON.parse(analysis.geoRefs as string)) : null,
+  };
+}
+```
+
+---
+
+### 3.2 · TweetCard Component (React)
+
+```tsx
+// /src/components/situation-monitor/feed/TweetCard.tsx
+import { Twitter, Repeat2, Heart, MessageCircle, Eye,
+         BadgeCheck, Building2, ExternalLink } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
+import { useNavigate } from 'react-router-dom';
+import type { FeedTweet } from '@/types/situation-monitor';
+import { useSituationMonitorStore } from '@/stores/situationMonitorStore';
+import { cn } from '@/lib/utils';
+
+interface Props {
+  tweet: FeedTweet;
+  isSelected: boolean;
+  isGeoHighlighted: boolean;
+  onSelect: () => void;
+}
+
+const TIER_CONFIG = {
+  S: { label: 'Oficial', color: 'bg-blue-900/60 text-blue-300 border-blue-700', icon: <Building2 className="w-3 h-3" /> },
+  A: { label: 'Político', color: 'bg-red-900/50 text-red-300 border-red-800', icon: null },
+  B: { label: 'Periodista', color: 'bg-zinc-800 text-zinc-300 border-zinc-600', icon: null },
+  C: { label: 'Analista', color: 'bg-zinc-800 text-zinc-400 border-zinc-700', icon: null },
+} as const;
+
+const IMPACTO_BORDER = {
+  critico: 'border-l-red-500',
+  alto: 'border-l-amber-500',
+  medio: 'border-l-zinc-500',
+  bajo: 'border-l-zinc-700',
+} as const;
+
+export function TweetCard({ tweet, isSelected, isGeoHighlighted, onSelect }: Props) {
+  const navigate = useNavigate();
+  const { hoverGeo } = useSituationMonitorStore();
+
+  const tierCfg = TIER_CONFIG[tweet.author.tier as keyof typeof TIER_CONFIG] ?? TIER_CONFIG.C;
+  const impactoBorder = IMPACTO_BORDER[tweet.analysis?.impactoPotencial as keyof typeof IMPACTO_BORDER] ?? 'border-l-zinc-800';
+
+  const timeAgo = formatTimeAgo(new Date(tweet.timestamp));
+
+  return (
+    <div
+      onClick={onSelect}
+      onMouseEnter={() => hoverGeo(tweet.lugar?.slug ?? null)}
+      onMouseLeave={() => hoverGeo(null)}
+      className={cn(
+        'relative rounded-lg border border-l-4 p-3 mb-1.5 cursor-pointer',
+        'transition-all duration-150 select-none',
+        impactoBorder,
+        isSelected
+          ? 'border-blue-500 bg-blue-950/30 shadow-md shadow-blue-950/50'
+          : isGeoHighlighted
+            ? 'border-zinc-500 bg-zinc-800/60'
+            : 'border-zinc-800 bg-zinc-900/60 hover:border-zinc-600 hover:bg-zinc-800/40'
+      )}
+    >
+      {/* Header del autor */}
+      <div className="flex items-start gap-2 mb-2">
+        {/* Avatar placeholder (usar profileImageUrl si disponible) */}
+        <div className="w-8 h-8 rounded-full bg-zinc-700 flex-shrink-0 flex items-center justify-center">
+          <Twitter className="w-4 h-4 text-zinc-400" />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Nombre del autor */}
+            <span
+              className="text-sm font-semibold text-zinc-100 hover:text-blue-400 cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (tweet.author.actorNetworkSlug) {
+                  navigate(`/actors/${tweet.author.actorNetworkSlug}`);
+                }
+              }}
+            >
+              {tweet.author.displayName}
+            </span>
+
+            {/* Verificado */}
+            {tweet.author.verifiedType && (
+              <Tooltip>
+                <TooltipTrigger>
+                  <BadgeCheck className={cn("w-3.5 h-3.5",
+                    tweet.author.verifiedType === 'government' ? 'text-yellow-400' : 'text-blue-400'
+                  )} />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs capitalize">{tweet.author.verifiedType}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Username */}
+            <span className="text-xs text-zinc-500">@{tweet.author.username}</span>
+
+            {/* Tier badge */}
+            <span className={cn('text-xs px-1.5 py-0.5 rounded border font-medium flex items-center gap-1', tierCfg.color)}>
+              {tierCfg.icon}
+              {tierCfg.label}
+            </span>
+
+            {/* Declaración oficial */}
+            {tweet.analysis?.esDeclaracionOficial && (
+              <Tooltip>
+                <TooltipTrigger>
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-blue-900/60 text-blue-300 border border-blue-700 font-medium">
+                    📢 Oficial
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs">Declaración o anuncio institucional oficial</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            {/* Timestamp */}
+            <span className="text-xs text-zinc-600 ml-auto">{timeAgo}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Contenido del tweet */}
+      <p className="text-sm text-zinc-100 leading-relaxed mb-2">
+        {tweet.content}
+      </p>
+
+      {/* Análisis (si existe) */}
+      {tweet.analysis && (
+        <div className="flex items-center gap-2 flex-wrap mb-2">
+          {/* Sentimiento */}
+          <Tooltip>
+            <TooltipTrigger>
+              <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium',
+                tweet.analysis.sentimientoLabel === 'NEG' ? 'bg-red-900/40 text-red-400'
+                : tweet.analysis.sentimientoLabel === 'POS' ? 'bg-green-900/40 text-green-400'
+                : 'bg-zinc-800 text-zinc-400'
+              )}>
+                {tweet.analysis.sentimientoLabel === 'NEG' ? '😠 Negativo'
+                 : tweet.analysis.sentimientoLabel === 'POS' ? '✓ Positivo'
+                 : '— Neutro'}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs">Score: {(tweet.analysis.sentimientoScore * 100).toFixed(0)}%</p>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Verificabilidad */}
+          <Tooltip>
+            <TooltipTrigger>
+              <span className={cn('text-xs px-1.5 py-0.5 rounded',
+                tweet.analysis.verificabilidad === 'verificable'
+                  ? 'bg-green-900/30 text-green-400'
+                  : tweet.analysis.verificabilidad === 'especulativo'
+                    ? 'bg-amber-900/30 text-amber-400'
+                    : 'bg-zinc-800 text-zinc-400'
+              )}>
+                {tweet.analysis.verificabilidad}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs max-w-48">
+                {tweet.analysis.verificabilidad === 'verificable'
+                  ? 'El contenido puede ser verificado con fuentes externas'
+                  : tweet.analysis.verificabilidad === 'especulativo'
+                    ? 'El contenido hace afirmaciones sin sustento verificable'
+                    : 'El contenido es una opinión del autor'}
+              </p>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Keywords */}
+          {tweet.analysis.keywords.slice(0, 3).map(kw => (
+            <span key={kw} className="text-xs px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-500 border border-zinc-700">
+              {kw}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Resumen del análisis (expandido al seleccionar) */}
+      {isSelected && tweet.analysis?.resumen && (
+        <div className="mt-2 p-2 bg-zinc-800/50 rounded border border-zinc-700">
+          <p className="text-xs text-zinc-300 italic mb-1">{tweet.analysis.resumen}</p>
+          {tweet.analysis.alertas?.length > 0 && (
+            <div className="mt-1 space-y-0.5">
+              {tweet.analysis.alertas.map((alerta, i) => (
+                <p key={i} className={cn('text-xs',
+                  alerta.severidad === 'critical' || alerta.severidad === 'danger'
+                    ? 'text-red-400' : 'text-amber-400'
+                )}>
+                  ⚠ {alerta.descripcion}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Engagement + link */}
+      <div className="flex items-center gap-3 mt-2 text-xs text-zinc-600">
+        <span className="flex items-center gap-1">
+          <Heart className="w-3 h-3" /> {formatCount(tweet.engagement.likes)}
+        </span>
+        <span className="flex items-center gap-1">
+          <Repeat2 className="w-3 h-3" /> {formatCount(tweet.engagement.retweets)}
+        </span>
+        <span className="flex items-center gap-1">
+          <MessageCircle className="w-3 h-3" /> {formatCount(tweet.engagement.replies)}
+        </span>
+        {tweet.engagement.views && (
+          <span className="flex items-center gap-1">
+            <Eye className="w-3 h-3" /> {formatCount(tweet.engagement.views)}
+          </span>
+        )}
+        <a
+          href={tweet.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          className="ml-auto flex items-center gap-1 hover:text-blue-400 transition-colors"
+        >
+          Ver en X <ExternalLink className="w-3 h-3" />
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// Helpers
+function formatTimeAgo(date: Date): string {
+  const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
+  return `${Math.floor(secs / 86400)}d`;
+}
+
+function formatCount(n: number | null | undefined): string {
+  if (!n) return '0';
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+```
+
+---
+
+### 3.3 · Filtro de fuente en el Feed
+
+```tsx
+// Agregar a FeedToolbar.tsx — toggle artículos / tweets / todo
+
+export function FeedSourceToggle() {
+  const { feedSourceFilter, setFeedSourceFilter } = useSituationMonitorStore();
+
+  return (
+    <div className="flex gap-1 bg-zinc-800 rounded-lg p-0.5">
+      {[
+        { value: 'all', label: 'Todo' },
+        { value: 'articles', label: '📰 Artículos' },
+        { value: 'tweets', label: '🐦 X / Tweets' },
+      ].map(opt => (
+        <button
+          key={opt.value}
+          onClick={() => setFeedSourceFilter(opt.value as FeedSourceFilter)}
+          className={cn(
+            'text-xs px-3 py-1 rounded-md transition-colors',
+            feedSourceFilter === opt.value
+              ? 'bg-zinc-600 text-zinc-100'
+              : 'text-zinc-400 hover:text-zinc-200'
+          )}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+```
+
+---
+
+## 5. FASE 4 — Señales de Inteligencia
+### Semana 4–5
+
+---
+
+### 4.1 · Tweets como señal del ITL
+
+```python
+# Extender calculate_itl() para incluir tweets
+
+async def get_tweet_signals(country_code: str, ventana: timedelta) -> dict:
+    """
+    Extrae señales de tweets de perfiles del país en la ventana temporal.
+    """
+    since = datetime.utcnow() - ventana
+
+    tweets = await prisma.tweet.find_many(
+        where={
+            "createdAt": {"gte": since},
+            "analysisStatus": "done",
+            "profile": {"country": country_code},
+        },
+        include={"analysis": True, "profile": True},
+    )
+
+    if not tweets:
+        return {"tweet_alarm_score": 0, "declaraciones_oficiales": 0, "tweet_count": 0}
+
+    # Score de alarmismo desde tweets (weight mayor si es tier S o A)
+    alarm_scores = []
+    for t in tweets:
+        if t.analysis:
+            weight = 2.0 if t.profile.tier in ("S", "A") else 1.0
+            alarm_scores.append(t.analysis.contribuyeAlarm * weight)
+
+    tweet_alarm = sum(alarm_scores) / len(alarm_scores) if alarm_scores else 0
+
+    # Declaraciones oficiales en el período
+    declaraciones = sum(1 for t in tweets if t.analysis and t.analysis.esDeclaracionOficial)
+
+    return {
+        "tweet_alarm_score": min(100, tweet_alarm * 100),
+        "declaraciones_oficiales": declaraciones,
+        "tweet_count": len(tweets),
+        "impacto_critico_count": sum(
+            1 for t in tweets if t.analysis and t.analysis.impactoPotencial == "critico"
+        ),
+    }
+
+
+# Modificar calculate_itl() para usar tweet signals:
+# ITL extendido = base_itl * 0.80 + tweet_alarm_score * 0.20
+# Si hay declaración oficial de tier S con impacto_potencial=critico:
+#   aplicar boost de +15 puntos al ITL
+```
+
+---
+
+### 4.2 · Tweets en Focal Point Detection
+
+```python
+# Extender detect_focal_points() para incluir menciones desde tweets
+
+# En el loop de artículos agregar un loop de tweets:
+for tweet in tweets_recientes:
+    if not tweet.analysis:
+        continue
+    for entidad in tweet.analysis.entidades:
+        slug = entidad.get("slug")
+        if not slug:
+            continue
+        entity_signals[slug]["tweet_mentions"].append(1)
+        entity_signals[slug]["tweet_alarm"].append(tweet.analysis.contribuyeAlarm)
+        # Boost si es tier S (organismo oficial mencionando a alguien = señal fuerte)
+        if tweet.profile.tier == "S":
+            entity_signals[slug]["official_mention"].append(2.0)
+
+# En el cálculo del focal_score:
+# tweet_mention_score = min(1.0, len(signals.get("tweet_mentions", [])) / 10)
+# official_mention_boost = min(0.3, sum(signals.get("official_mention", [0])) * 0.1)
+# focal_score += tweet_mention_score * 0.2 + official_mention_boost
+```
+
+---
+
+### 4.3 · Actor Network — Vinculación de tweets
+
+```typescript
+// Endpoint para el panel lateral del actor — incluir tweets recientes
+// GET /api/actors/:slug/tweets
+
+router.get('/actors/:slug/tweets', authenticate, async (req, res) => {
+  const { slug } = req.params;
+
+  // Buscar perfil Twitter vinculado al actor
+  const profile = await prisma.twitterProfile.findFirst({
+    where: { actorNetworkSlug: slug, scrapeEnabled: true },
+  });
+
+  if (!profile) return res.json({ tweets: [], hasProfile: false });
+
+  const tweets = await prisma.tweet.findMany({
+    where: {
+      profileId: profile.id,
+      analysisStatus: 'done',
+      createdAt: { gte: subDays(new Date(), 7) },
+    },
+    include: { analysis: true },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+  });
+
+  res.json({
+    hasProfile: true,
+    profile: {
+      username: profile.username,
+      displayName: profile.displayName,
+      followersCount: profile.followersCount,
+      verifiedType: profile.verifiedType,
+    },
+    tweets: tweets.map(normalizeTweetForFeed),
+    stats: {
+      total7d: tweets.length,
+      avgAlarmismo: average(tweets.map(t => t.analysis?.scoreAlarmismo ?? 0)),
+      declaracionesOficiales: tweets.filter(t => t.analysis?.esDeclaracionOficial).length,
+    },
+  });
+});
+```
+
+---
+
+## 6. FASE 5 — Admin Panel
+### Semana 5
+
+---
+
+### 5.1 · Gestión de Perfiles (React)
+
+```tsx
+// /src/pages/admin/TwitterProfilesAdmin.tsx
+
+export function TwitterProfilesAdmin() {
+  // Lista de perfiles con estado de salud del scraping
+  // CRUD: agregar / editar / desactivar perfiles
+  // Account pool health (% de cuentas activas)
+  // Queue monitor: tweets pending analysis
+
+  return (
+    <div className="space-y-6">
+      <AccountPoolHealth />    {/* Estado de las cuentas scraper */}
+      <ScrapeQueueMonitor />   {/* Tweets en cola + tasa de análisis */}
+      <ProfilesTable />        {/* Lista de perfiles con controles */}
+      <AddProfileModal />      {/* Agregar nuevo perfil */}
+    </div>
+  );
+}
+
+// AccountPoolHealth — muestra el health report del pool
+function AccountPoolHealth() {
+  const { data: health } = useQuery({
+    queryKey: ['twitter-pool-health'],
+    queryFn: () => fetch('/api/admin/twitter/pool-health').then(r => r.json()),
+    refetchInterval: 30_000,
+  });
+
+  return (
+    <div className="rounded-lg border border-zinc-700 p-4 bg-zinc-900">
+      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+        <span className={cn('w-2 h-2 rounded-full', health?.degraded ? 'bg-red-500 animate-pulse' : 'bg-green-500')} />
+        Account Pool — {health?.active}/{health?.total} activas ({health?.health_pct}%)
+      </h3>
+      <div className="grid grid-cols-4 gap-2">
+        {health?.accounts?.map(acc => (
+          <div key={acc.username} className={cn(
+            'text-xs p-2 rounded border',
+            acc.active ? 'border-green-800 bg-green-900/20 text-green-300'
+            : 'border-red-800 bg-red-900/20 text-red-300'
+          )}>
+            <p className="font-medium">@{acc.username}</p>
+            <p className="text-zinc-400">{acc.total_req} req</p>
+            {acc.error && <p className="text-red-400 truncate">{acc.error}</p>}
+          </div>
+        ))}
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="mt-3"
+        onClick={() => fetch('/api/admin/twitter/relogin-failed', { method: 'POST' })}
+      >
+        Reintentar cuentas fallidas
+      </Button>
+    </div>
+  );
+}
+```
+
+---
+
+### 5.2 · Endpoints Admin (Node.js)
+
+```typescript
+// /src/routes/admin/twitter.ts
+
+// GET /api/admin/twitter/pool-health
+router.get('/pool-health', adminAuth, async (req, res) => {
+  const cached = await redis.get('twitter:pool:health');
+  if (cached) return res.json(JSON.parse(cached));
+  res.json({ error: 'No health data available yet' });
+});
+
+// POST /api/admin/twitter/relogin-failed
+router.post('/relogin-failed', adminAuth, async (req, res) => {
+  // Encolar tarea Celery de relogin
+  await celery.send('tasks.twitter_scraper.relogin_failed_accounts');
+  res.json({ ok: true });
+});
+
+// GET /api/admin/twitter/profiles
+router.get('/profiles', adminAuth, async (req, res) => {
+  const profiles = await prisma.twitterProfile.findMany({
+    orderBy: [{ tier: 'asc' }, { username: 'asc' }],
+    include: {
+      _count: { select: { tweets: true } },
+      tweets: {
+        where: { analysisStatus: 'pending' },
+        select: { id: true },
+      }
+    }
+  });
+  res.json(profiles);
+});
+
+// POST /api/admin/twitter/profiles
+router.post('/profiles', adminAuth, async (req, res) => {
+  const data = createProfileSchema.parse(req.body);
+  const profile = await prisma.twitterProfile.create({ data });
+  res.json(profile);
+});
+
+// PATCH /api/admin/twitter/profiles/:id
+router.patch('/profiles/:id', adminAuth, async (req, res) => {
+  const data = updateProfileSchema.parse(req.body);
+  const profile = await prisma.twitterProfile.update({
+    where: { id: req.params.id },
+    data,
+  });
+  res.json(profile);
+});
+
+// POST /api/admin/twitter/profiles/:id/scrape-now
+router.post('/profiles/:id/scrape-now', adminAuth, async (req, res) => {
+  // Forzar scrape inmediato con prioridad máxima
+  await celery.send('tasks.twitter_scraper.scrape_profile_tweets',
+    [req.params.id], { priority: 0, queue: 'twitter_scrape' }
+  );
+  res.json({ ok: true, message: 'Scrape encolado con prioridad máxima' });
+});
+```
+
+---
+
+## 7. APÉNDICE: SCHEMAS COMPLETOS
+
+### Tipos TypeScript — Feed unificado
+
+```typescript
+// /src/types/situation-monitor.ts — agregar
+
+export interface TweetAuthor {
+  username: string;
+  displayName: string;
+  tier: 'S' | 'A' | 'B' | 'C';
+  category: string;
+  verifiedType: 'blue' | 'government' | 'business' | null;
+  profileImageUrl: string | null;
+  isStateAffiliated: boolean;
+  actorNetworkSlug: string | null;
+}
+
+export interface TweetEngagement {
+  likes: number;
+  retweets: number;
+  replies: number;
+  views: number | null;
+}
+
+export interface TweetAnalysisResult {
+  intencion: string;
+  esDeclaracionOficial: boolean;
+  impactoPotencial: 'bajo' | 'medio' | 'alto' | 'critico';
+  sentimientoLabel: 'POS' | 'NEG' | 'NEU';
+  sentimientoScore: number;
+  scoreAlarmismo: number;
+  verificabilidad: 'verificable' | 'opinion' | 'especulativo';
+  resumen: string;
+  keywords: string[];
+  entidades: Array<{ texto: string; tipo: string; slug: string; accion: string }>;
+  geoRefs: Array<{ nombre: string; tipo: string; lat: number; lon: number; confianza: number }>;
+  alertas: Array<{ tipo: string; descripcion: string; severidad: string }>;
+}
+
+export interface FeedTweet {
+  id: string;
+  type: 'tweet';
+  content: string;
+  url: string;
+  timestamp: string;
+  author: TweetAuthor;
+  engagement: TweetEngagement;
+  analysis: TweetAnalysisResult | null;
+  lugar: { slug: string; nombre_display: string; lat: number; lon: number } | null;
+}
+
+// Extender FeedItem existente
+export type FeedItem =
+  | { type: 'event'; timestamp: string; data: SituationEvent }
+  | { type: 'cluster'; timestamp: string; data: EventCluster }
+  | { type: 'tweet'; timestamp: string; data: FeedTweet }   // NUEVO
+  | { type: 'alert'; timestamp: string; data: LiveAlert };
+
+export type FeedSourceFilter = 'all' | 'articles' | 'tweets';
+```
+
+### Variables de entorno nuevas
+
+```bash
+# .env — AI Engine
+
+# Pool de cuentas scraper (JSON array, guardar en secret manager en prod)
+TWITTER_SCRAPER_ACCOUNTS='[{"username":"scraper1","cookies":"...","proxy":"socks5://..."},{"username":"scraper2","cookies":"..."}]'
+
+# Path de la DB de twscrape (SQLite interno)
+TWSCRAPE_DB_PATH=/data/twscrape_accounts.db
+
+# Proxy global (fallback si la cuenta no tiene proxy propio)
+TWSCRAPE_GLOBAL_PROXY=socks5://user:pass@proxy.example.com:1080
+
+# Cola Celery dedicada para scraping
+CELERY_TWITTER_QUEUE=twitter_scrape
+```
+
+### Docker Compose — servicio dedicado
+
+```yaml
+# docker-compose.yml — agregar
+
+  celery-twitter:
+    build: ./ai_engine
+    command: celery -A app.celery worker -Q twitter_scrape -c 2 --loglevel=info
+    environment:
+      - TWITTER_SCRAPER_ACCOUNTS=${TWITTER_SCRAPER_ACCOUNTS}
+      - TWSCRAPE_DB_PATH=/data/twscrape_accounts.db
+      - TWSCRAPE_GLOBAL_PROXY=${TWSCRAPE_GLOBAL_PROXY}
+    volumes:
+      - twscrape_data:/data     # persistir SQLite de twscrape entre reinicios
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  twscrape_data:
+```
+
+---
+
+## CHECKLIST MAESTRO
+
+### Fase 1 — Scraping Engine (Semana 1–2)
+- [ ] `pip install twscrape` en AI Engine + `pip install scweet` (fallback)
+- [ ] Migración Prisma: `TwitterProfile`, `Tweet`, `TweetAnalysis`, `ScraperAccount`
+- [ ] `account_pool.py` con circuit breaker y health reporting
+- [ ] `scrape_profile_tweets` task con filtros de calidad
+- [ ] `dispatch_scrape_jobs` scheduler (cada minuto)
+- [ ] Worker Celery dedicado `celery-twitter` en Docker Compose
+- [ ] Volumen Docker para persistir `twscrape_accounts.db`
+- [ ] Seed inicial: 20–30 perfiles prioritarios AR (BCRA, Presidencia, principales políticos)
+
+### Fase 2 — Pipeline de Análisis (Semana 2–3)
+- [ ] Prompt LLM slim para tweets (280 chars)
+- [ ] `analyze_pending_tweets` task (cada 2 min)
+- [ ] Merge pysentimiento + LLM resultado
+- [ ] Integración señal → `WelfordTracker` (tags_itl)
+
+### Fase 3 — Feed Integrado (Semana 3–4)
+- [ ] `getTweetEvents()` en endpoint `/api/situation-monitor`
+- [ ] `normalizeTweetForFeed()` con tipo unificado
+- [ ] `TweetCard` component con todos los estados
+- [ ] `FeedSourceToggle` (todo / artículos / tweets)
+- [ ] Zustand: `feedSourceFilter` state + acción
+- [ ] Mapa: pins de tweets con geoRefs (mismo flow que eventos de artículos)
+
+### Fase 4 — Señales de Inteligencia (Semana 4–5)
+- [ ] `get_tweet_signals()` integrado en `calculate_itl()`
+- [ ] Boost ITL por declaraciones oficiales de tier S
+- [ ] Tweets en `detect_focal_points()`
+- [ ] Endpoint `/api/actors/:slug/tweets` para panel lateral
+- [ ] `ActorNetworkGraph` nodo → mostrar tweets recientes en Sheet
+
+### Fase 5 — Admin Panel (Semana 5)
+- [ ] `TwitterProfilesAdmin` page en `/admin/twitter`
+- [ ] `AccountPoolHealth` widget con relogin button
+- [ ] `ScrapeQueueMonitor` (pending count + rate)
+- [ ] `ProfilesTable` con CRUD completo
+- [ ] Endpoint `POST /profiles/:id/scrape-now` para forzar scrape
+
+---
+
+## RESUMEN DE RIESGOS Y MITIGACIONES
+
+| Riesgo | Probabilidad | Mitigación |
+|--------|-------------|------------|
+| Ban de cuentas scraper | Alta | Pool de 5–10 cuentas, cookies-based, proxies por cuenta, rate limits conservadores |
+| Rate limit global de X | Media | Circuit breaker por cuenta, Scweet como fallback, cola diferida |
+| Cambios en API GraphQL de X | Media | twscrape actualiza activamente (v0.17.0, abril 2025), seguir releases |
+| Calidad del análisis LLM en tweets cortos | Baja | Prompt especializado para 280 chars + pysentimiento como override |
+| Duplicados de tweets | Baja | Upsert por tweet_id en Prisma |
+| Pool sin cuentas (todos baneados) | Baja | Gap de inteligencia registrado + alerta al admin via WebSocket |
+
+---
+
+*Newsyx Twitter/X Intelligence Module — Roadmap Enterprise*  
+*Scraper: twscrape v0.17.0 (MIT) · Stack: FastAPI + Celery + Redis + PostgreSQL + React 18*

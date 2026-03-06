@@ -1,0 +1,47 @@
+# ─── INGESTA ────────────────────────────────────────────────
+feedparser>=6.0.0
+newsapi-python==0.2.7
+httpx==0.27.0
+newspaper4k==0.9.3.1
+trafilatura==1.8.0
+playwright==1.44.0
+beautifulsoup4>=4.12.3
+lxml==5.2.1
+# python-dateutil==2.9.0
+# validators==0.28.1
+requests==2.31.0
+
+# ─── TWITTER/X INTELLIGENCE ─────────────────────────────────
+twscrape>=0.17.0
+# ─── NLP ────────────────────────────────────────────────────
+spacy==3.7.4
+# pysentimiento>=0.7.2
+# accelerate
+# keybert==0.8.4
+# sentence-transformers==2.7.0
+nltk==3.8.1
+langdetect==1.0.9
+
+# ─── LLM / AGENTE ───────────────────────────────────────────
+langgraph>=0.1.5,<0.2.0
+langchain-core>=0.2.23,<0.3.0
+tavily-python==0.3.3
+SPARQLWrapper==2.0.0
+google-generativeai>=0.8.2
+groq>=0.18.0
+# g4f runs as a standalone Docker container (see docker-compose.yml), no pip install needed
+
+# ─── FRAMEWORK / INFRAESTRUCTURA ────────────────────────────
+fastapi==0.110.3
+uvicorn==0.30.0
+celery==5.4.0
+redis==5.0.4
+pydantic==2.7.0
+pydantic-settings==2.2.1
+asyncpg==0.29.0
+structlog==24.1.0
+python-dotenv==1.0.1
+sqlalchemy==2.0.28
+flower==2.0.1
+email-validator>=2.0.0
+dnspython>=2.0.0
