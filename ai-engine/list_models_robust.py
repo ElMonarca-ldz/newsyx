@@ -1,15 +1,5 @@
-import google.generativeai as genai
+from google import genai
 import os
-from dotenv import load_dotenv
-
-# Manually read .env from the root directory
-env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
-if os.path.exists(env_path):
-    with open(env_path, "r") as f:
-        for line in f:
-            if "=" in line and not line.startswith("#"):
-                key, value = line.strip().split("=", 1)
-                os.environ[key] = value
 
 api_key = os.environ.get("GOOGLE_API_KEY")
 print(f"API Key found: {api_key[:5]}...{api_key[-5:] if api_key else 'None'}")
@@ -19,18 +9,18 @@ if not api_key:
     exit(1)
 
 try:
-    genai.configure(api_key=api_key)
-    print("Successfully configured genai.")
+    client = genai.Client(api_key=api_key)
+    print("Successfully initialized genai Client.")
     
-    print("Available models supporting generateContent:")
-    models = genai.list_models()
+    print("Available Gemini models:")
     count = 0
-    for m in models:
-        if 'generateContent' in m.supported_generation_methods:
+    # The new SDK list() returns an iterator of Model objects
+    for m in client.models.list():
+        if "gemini" in m.name:
             print(f"- {m.name}")
             count += 1
     
     if count == 0:
-        print("No models found with generateContent support.")
+        print("No Gemini models found.")
 except Exception as e:
     print(f"Error during API call: {e}")

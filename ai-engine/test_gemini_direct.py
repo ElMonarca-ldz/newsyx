@@ -30,39 +30,16 @@ async def main():
     
     # Note: Using Pydantic 2.x methods as per ai-engine/llm/gemini_client.py
     try:
-        print("Sending request to Gemini...")
-        # Replicate the logic in gemini_client.py:90-106
-        import google.generativeai as genai
-        api_key = os.environ.get("GOOGLE_API_KEY")
-        model_name = "models/gemini-2.0-flash" 
-        genai.configure(api_key=api_key)
+        print("Sending request to Gemini via GoogleGeminiClient...")
         
-        # genai 0.8.6 with Pydantic 2.x can be tricky. Let's use a very simple manual schema.
-        schema = {
-            "type": "object",
-            "properties": {
-                "message": {"type": "string"},
-                "status": {"type": "string"}
-            },
-            "required": ["message", "status"]
-        }
-        
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=system_prompt,
-            generation_config={
-                "temperature": 0.1,
-                "response_mime_type": "application/json",
-                "response_schema": schema
-            }
+        # Test directly using the client's implementation
+        result = await client.complete_structured(
+            system_prompt=system_prompt,
+            user_content=user_content,
+            output_schema=TestOutput
         )
         
-        response = await model.generate_content_async(user_content)
-        if not response.text:
-            print("FAILED! Empty response")
-        else:
-            result = TestOutput.model_validate_json(response.text)
-            print(f"SUCCESS! Response: {result}")
+        print(f"SUCCESS! Response: {result}")
             
     except Exception as e:
         print(f"FAILED! Error: {e}")
