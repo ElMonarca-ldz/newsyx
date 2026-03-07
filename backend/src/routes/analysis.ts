@@ -103,4 +103,29 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 });
 
+// Bulk delete analyses
+router.post('/bulk-delete', async (req: Request, res: Response) => {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        res.status(400).json({ error: 'Invalid or empty IDs array' });
+        return;
+    }
+
+    try {
+        const result = await prisma.newsAnalysis.deleteMany({
+            where: {
+                id: { in: ids }
+            }
+        });
+        res.status(200).json({
+            message: `Successfully deleted ${result.count} analyses`,
+            count: result.count
+        });
+    } catch (error) {
+        console.error('Bulk delete error:', error);
+        res.status(500).json({ error: 'Failed to perform bulk deletion' });
+    }
+});
+
 export default router;

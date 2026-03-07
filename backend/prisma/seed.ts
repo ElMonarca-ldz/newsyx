@@ -443,57 +443,60 @@ const DEFAULT_RSS_FEEDS: Record<string, FeedSeedData> = {
 async function main() {
     console.log('Start seeding ...');
 
-    // Create default admin user
-    const admin = await prisma.user.upsert({
-        where: { email: 'admin@newsyx.com' },
-        update: {},
+});
+console.log(`Created user with id: ${admin.id}`);
+
+// Create rmarketing user
+const rmarketing = await prisma.user.upsert({
+    where: { email: 'rmarketing@newsyx.com' },
+    update: {},
+    create: {
+        email: 'rmarketing@newsyx.com',
+        name: 'Rmarketing',
+        passwordHash: '$2b$10$cjo4lITr6BU9dF3WnVxmOeJPJ1GDopEjmQ7bDv5e8cukW557JugH/.',
+        role: 'ADMIN',
+    },
+});
+console.log(`Created user rmarketing with id: ${rmarketing.id}`);
+
+// Create RSS Feeds with tier metadata
+for (const [feedId, data] of Object.entries(DEFAULT_RSS_FEEDS)) {
+    const dominio = new URL(data.url).hostname;
+
+    const feed = await prisma.rssFeed.upsert({
+        where: { feedId },
+        update: {
+            tier: data.tier,
+            propagandaRisk: data.propagandaRisk,
+            stateAffiliated: data.stateAffiliated,
+            politicalLean: data.politicalLean ?? null,
+            countryOrigin: data.countryOrigin,
+            reachScope: data.reachScope,
+            pais: data.pais,
+        },
         create: {
-            email: 'admin@newsyx.com',
-            name: 'Admin User',
-            passwordHash: '$2b$10$EpRnTzVlqHNP0.fKb.U9H.micro/cf',
-            role: 'ADMIN',
+            feedId,
+            url: data.url,
+            nombre: data.nombre,
+            dominio,
+            pais: data.pais,
+            idioma: data.idioma ?? 'es',
+            categoria: data.categoria ?? 'General',
+            activo: true,
+            esDefault: data.esDefault ?? false,
+            // A1 · Tier metadata
+            tier: data.tier,
+            propagandaRisk: data.propagandaRisk,
+            stateAffiliated: data.stateAffiliated,
+            politicalLean: data.politicalLean ?? null,
+            countryOrigin: data.countryOrigin,
+            reachScope: data.reachScope,
         },
     });
-    console.log(`Created user with id: ${admin.id}`);
+    console.log(`Upserted feed: ${feed.feedId} (Tier ${feed.tier}, ${feed.pais})`);
+}
 
-    // Create RSS Feeds with tier metadata
-    for (const [feedId, data] of Object.entries(DEFAULT_RSS_FEEDS)) {
-        const dominio = new URL(data.url).hostname;
-
-        const feed = await prisma.rssFeed.upsert({
-            where: { feedId },
-            update: {
-                tier: data.tier,
-                propagandaRisk: data.propagandaRisk,
-                stateAffiliated: data.stateAffiliated,
-                politicalLean: data.politicalLean ?? null,
-                countryOrigin: data.countryOrigin,
-                reachScope: data.reachScope,
-                pais: data.pais,
-            },
-            create: {
-                feedId,
-                url: data.url,
-                nombre: data.nombre,
-                dominio,
-                pais: data.pais,
-                idioma: data.idioma ?? 'es',
-                categoria: data.categoria ?? 'General',
-                activo: true,
-                esDefault: data.esDefault ?? false,
-                // A1 · Tier metadata
-                tier: data.tier,
-                propagandaRisk: data.propagandaRisk,
-                stateAffiliated: data.stateAffiliated,
-                politicalLean: data.politicalLean ?? null,
-                countryOrigin: data.countryOrigin,
-                reachScope: data.reachScope,
-            },
-        });
-        console.log(`Upserted feed: ${feed.feedId} (Tier ${feed.tier}, ${feed.pais})`);
-    }
-
-    console.log('Seeding finished.');
+console.log('Seeding finished.');
 }
 
 main()

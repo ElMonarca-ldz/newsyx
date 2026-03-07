@@ -550,34 +550,6 @@ export const AnalysisDashboard: React.FC<AnalysisDashboardProps> = ({ analysis }
         </div>
     );
 
-    const handleDelete = async () => {
-        if (!window.confirm('¿Estás seguro de que deseas eliminar este artículo? Esta acción no se puede deshacer.')) {
-            return;
-        }
-
-        setIsDeleting(true);
-        try {
-            const response = await fetch(`/api/analysis/${analysis.id}`, {
-                method: 'DELETE',
-            });
-
-            if (response.ok) {
-                alert('Artículo eliminado con éxito.');
-                // Refresh the page or navigate away. 
-                // Since we don't have routing context here, reload is the safest fallback.
-                window.location.href = '/';
-            } else {
-                const errorData = await response.json();
-                alert(`Error al eliminar: ${errorData.error || 'Desconocido'}`);
-            }
-        } catch (error) {
-            console.error('Delete error:', error);
-            alert('Error de red al intentar eliminar el artículo.');
-        } finally {
-            setIsDeleting(false);
-        }
-    };
-
     // Safety guard for missing analysis prop
     if (!analysis) {
         return <div className="p-8 text-center italic text-muted-foreground">Cargando datos de análisis...</div>;
@@ -724,15 +696,6 @@ export const AnalysisDashboard: React.FC<AnalysisDashboardProps> = ({ analysis }
                             OPINIÓN
                         </span>
                     )}
-                    <button
-                        onClick={handleDelete}
-                        disabled={isDeleting}
-                        className="ml-auto flex items-center gap-1 text-rose-500 hover:text-rose-700 transition-colors text-xs font-bold disabled:opacity-50"
-                        title="Eliminar artículo"
-                    >
-                        <Trash2 className="w-4 h-4" />
-                        {isDeleting ? 'Eliminando...' : 'Eliminar Artículo'}
-                    </button>
                 </div>
             </div>
 

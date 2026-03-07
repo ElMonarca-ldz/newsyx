@@ -7,6 +7,8 @@ import { PrismaClient } from '@prisma/client';
 // Routes
 import authRoutes from './routes/auth';
 import analysisRoutes from './routes/analysis';
+import usersRoutes from './routes/users';
+import { authenticate } from './middleware/auth';
 import sourcesRoutes from './routes/sources';
 import dashboardRoutes from './routes/dashboard';
 import eventsRoutes from './routes/events';
@@ -19,13 +21,14 @@ import intelligenceRoutes from './routes/intelligence';
 import storiesRoutes from './routes/stories';
 import twitterRoutes from './routes/twitter';
 import actorRoutes from './routes/actors';
-
 import prisma from './lib/prisma';
+
+const app = express();
+
+app.use(cors());
 
 const http = require('http');
 const { WebSocketServer } = require('ws');
-
-const app = express();
 const port = process.env.PORT || 4000;
 const server = http.createServer(app);
 
@@ -69,20 +72,27 @@ app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
 
+// Public routes
 app.use('/api/auth', authRoutes);
 app.use('/api/analysis', analysisRoutes);
-app.use('/api/sources', sourcesRoutes);
-app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/events', eventsRoutes);
-app.use('/api/settings', settingsRoutes);
 app.use('/api/situation-monitor', situationMonitorRoutes);
 app.use('/api/financial-signals', financialRoutes);
-app.use('/api/itl', itlRoutes);
-app.use('/api/stream', streamRoutes);
-app.use('/api/intelligence', intelligenceRoutes);
-app.use('/api/stories', storiesRoutes);
-app.use('/api/twitter', twitterRoutes);
-app.use('/api/actors', actorRoutes);
+
+// Protected routes
+app.use('/api/users', authenticate, usersRoutes);
+app.use('/api/sources', authenticate, sourcesRoutes);
+app.use('/api/dashboard', authenticate, dashboardRoutes);
+app.use('/api/settings', authenticate, settingsRoutes);
+app.use('/api/llm-logs', authenticate, settingsRoutes); // Handled in settings.ts
+app.use('/api/scraper-accounts', authenticate, sourcesRoutes); // Handled in sources.ts or settings? Sources has scraper config.
+app.use('/api/system-configs', authenticate, settingsRoutes); // Handled in settings.ts
+app.use('/api/itl', authenticate, itlRoutes);
+app.use('/api/stream', authenticate, streamRoutes);
+app.use('/api/intelligence', authenticate, intelligenceRoutes);
+app.use('/api/stories', authenticate, storiesRoutes);
+app.use('/api/twitter', authenticate, twitterRoutes);
+app.use('/api/actors', authenticate, actorRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
