@@ -29,13 +29,13 @@ G4F_AUTH_FREE_MODELS = [
     "pi",
 ]
 
-# Combined rotation for general use
-G4F_MODEL_ROTATION = G4F_AUTH_MODELS + G4F_AUTH_FREE_MODELS
+# Combined rotation for general use (Excluding auth-heavy models for stability by default)
+G4F_MODEL_ROTATION = G4F_AUTH_FREE_MODELS
 
 
 class GPT4FreeClient:
     def __init__(self):
-        self.model_name = os.environ.get("GPT4FREE_MODEL", "gpt-4o")
+        self.model_name = os.environ.get("GPT4FREE_MODEL", "duckduckgo")
         self.circuit_breaker = RedisCircuitBreaker(
             name="gpt4free",
             failure_threshold=5,
