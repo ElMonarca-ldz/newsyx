@@ -59,3 +59,4 @@
 {"user": null, "model": "gpt-4o-mini", "provider": "ApiAirforce", "prompt_tokens": 11584, "completion_tokens": 3666, "total_tokens": 15250}
 {"user": null, "model": "gpt-4o-mini", "provider": "ApiAirforce", "prompt_tokens": 11734, "completion_tokens": 3452, "total_tokens": 15186}
 {"user": null, "model": "gpt-4o-mini", "provider": "ApiAirforce", "prompt_tokens": 11666, "completion_tokens": 2611, "total_tokens": 14277}
+{"user": null, "model": "gpt-4o-mini", "provider": "ApiAirforce", "prompt_tokens": 12853, "completion_tokens": 5856, "total_tokens": 18709}

@@ -141,6 +141,10 @@ postgres_data/
 # Redis
 redis_data/
 
+# Celery
+ai-engine/celerybeat-schedule
+ai-engine/celerybeat-schedule.*
+
 # Newsyx Specific
 ai-engine/har_and_cookies/*.har
 ai-engine/har_and_cookies/*.json
