@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Activity, TrendingUp, AlertTriangle, FileText, Power, PowerOff } from 'lucide-react';
 import { Button } from "@/components/ui/button"
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:4000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
 const StatCard = ({ title, value, change, icon: Icon, trend }: any) => (
     <div className="p-6 rounded-xl border bg-card text-card-foreground shadow-sm">

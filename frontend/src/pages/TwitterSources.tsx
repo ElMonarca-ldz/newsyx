@@ -23,7 +23,7 @@ import {
     deleteScraperAccount,
 } from '@/api/twitter';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:4000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
 // ─── Constants ──────────────────────────────────────────────────────────
 const TIERS = [
