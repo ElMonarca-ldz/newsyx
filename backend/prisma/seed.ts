@@ -450,7 +450,7 @@ async function main() {
         create: {
             email: 'admin@newsyx.com',
             name: 'Admin User',
-            passwordHash: '$2b$10$EpRnTzVlqHNP0.fKb.U9H.micro/cf',
+            passwordHash: '$2b$10$KJpoRL2k1Wka7jYrc42yteQh4lhqGWYfjENZRZPz75YvtZjgButLe',
             role: 'ADMIN',
         },
     });
@@ -463,7 +463,7 @@ async function main() {
         create: {
             email: 'rmarketing@newsyx.com',
             name: 'Rmarketing',
-            passwordHash: '$2b$10$cjo4lITr6BU9dF3WnVxmOeJPJ1GDopEjmQ7bDv5e8cukW557JugH/.',
+            passwordHash: '$2b$10$KJpoRL2k1Wka7jYrc42yteQh4lhqGWYfjENZRZPz75YvtZjgButLe',
             role: 'ADMIN',
         },
     });
