@@ -19,6 +19,7 @@ import {
     EyeOff,
     FileText
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -28,6 +29,8 @@ export const Settings = () => {
     const [loading, setLoading] = useState(true);
     const [loadingModels, setLoadingModels] = useState(false);
     const [saving, setSaving] = useState(false);
+    const { token } = useAuth();
+    const authHeaders = (): Record<string, string> => token ? { 'Authorization': `Bearer ${token}` } : {};
 
     // Form state - OpenRouter
     const [orApiKey, setOrApiKey] = useState('');
@@ -83,7 +86,7 @@ export const Settings = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/settings/llm/test`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 body: JSON.stringify({ provider, apiKey })
             });
 
@@ -103,7 +106,7 @@ export const Settings = () => {
     const fetchLogs = async () => {
         setLoadingLogs(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/settings/llm/logs`);
+            const res = await fetch(`${API_BASE_URL}/settings/llm/logs`, { headers: authHeaders() });
             if (res.ok) {
                 const data = await res.json();
                 setLlmLogs(data);
@@ -118,7 +121,7 @@ export const Settings = () => {
     const fetchPrompts = async () => {
         setLoadingPrompts(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/settings/prompts`);
+            const res = await fetch(`${API_BASE_URL}/settings/prompts`, { headers: authHeaders() });
             if (res.ok) {
                 const data = await res.json();
                 setAnalysisPrompt(data.analysisPrompt || '');
@@ -137,7 +140,7 @@ export const Settings = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/settings/prompts`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 body: JSON.stringify({
                     analysisPrompt: analysisPrompt,
                     crossmediaPrompt: crossmediaPrompt
@@ -159,7 +162,7 @@ export const Settings = () => {
 
     const fetchSettings = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/settings`);
+            const res = await fetch(`${API_BASE_URL}/settings`, { headers: authHeaders() });
             const data = await res.json();
             setSettings(data);
 
@@ -187,7 +190,7 @@ export const Settings = () => {
     const fetchModels = async () => {
         setLoadingModels(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/settings/openrouter/models`);
+            const res = await fetch(`${API_BASE_URL}/settings/openrouter/models`, { headers: authHeaders() });
             if (!res.ok) throw new Error('Error al obtener modelos');
             const data = await res.json();
             setModels(data);
@@ -204,7 +207,7 @@ export const Settings = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/settings/llm/config`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 body: JSON.stringify({
                     openrouterApiKey: orApiKey || undefined,
                     openrouterModel: orModel,
@@ -248,7 +251,7 @@ export const Settings = () => {
         try {
             const res = await fetch(`${API_BASE_URL}/settings/pipeline/config`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 body: JSON.stringify({
                     ingestionCycleMinutes: ingestionCycle,
                     maxArticlesPerCycle: maxArticles

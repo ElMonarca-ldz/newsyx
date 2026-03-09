@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Activity, TrendingUp, AlertTriangle, FileText, Power, PowerOff } from 'lucide-react';
 import { Button } from "@/components/ui/button"
+import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -25,11 +26,14 @@ export const Dashboard = () => {
     const [stats, setStats] = useState<any>(null);
     const [isIngestionEnabled, setIsIngestionEnabled] = useState<boolean>(true);
     const [loading, setLoading] = useState(true);
+    const { token } = useAuth();
 
     useEffect(() => {
+        const headers: any = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
         Promise.all([
-            fetch(`${API_BASE_URL}/dashboard/stats`).then(res => res.json()),
-            fetch(`${API_BASE_URL}/settings`).then(res => res.json())
+            fetch(`${API_BASE_URL}/dashboard/stats`, { headers }).then(res => res.json()),
+            fetch(`${API_BASE_URL}/settings`, { headers }).then(res => res.json())
         ])
             .then(([statsData, settingsData]) => {
                 setStats(statsData);
@@ -48,7 +52,7 @@ export const Dashboard = () => {
         try {
             await fetch(`${API_BASE_URL}/settings/ingestion/toggle`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
                 body: JSON.stringify({ enabled: newState })
             });
         } catch (error) {

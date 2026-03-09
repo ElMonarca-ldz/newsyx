@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit2, Check, X, Globe, Radio, Save, Search, Compass, AlertCircle, Loader2 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -64,6 +65,9 @@ export const Sources = () => {
     const [activeTab, setActiveTab] = useState<'list' | 'discover'>('list');
     const [isAdding, setIsAdding] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const { token } = useAuth();
+
+    const authHeader = (): Record<string, string> => token ? { 'Authorization': `Bearer ${token}` } : {};
 
     // Form state
     const [formData, setFormData] = useState({
@@ -92,7 +96,7 @@ export const Sources = () => {
 
     const fetchSources = () => {
         setLoading(true);
-        fetch(`${API_BASE_URL}/sources`)
+        fetch(`${API_BASE_URL}/sources`, { headers: authHeader() })
             .then(res => res.json())
             .then(data => {
                 setSources(data);
@@ -114,7 +118,7 @@ export const Sources = () => {
 
         fetch(`${API_BASE_URL}/sources/${id}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeader() },
             body: JSON.stringify({ activo: nextStatus })
         }).then(res => {
             if (!res.ok) throw new Error('ServerError');
@@ -129,7 +133,7 @@ export const Sources = () => {
 
     const handleDelete = (id: string) => {
         if (!window.confirm('¿Estás seguro de que deseas eliminar esta fuente?')) return;
-        fetch(`${API_BASE_URL}/sources/${id}`, { method: 'DELETE' })
+        fetch(`${API_BASE_URL}/sources/${id}`, { method: 'DELETE', headers: authHeader() })
             .then(() => setSources(prev => prev.filter(s => s.id !== id)))
             .catch(err => console.error('Error deleting source:', err));
     };
@@ -165,7 +169,7 @@ export const Sources = () => {
 
         fetch(url, {
             method: method,
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeader() },
             body: JSON.stringify(formData)
         })
             .then(res => res.json())
@@ -195,7 +199,7 @@ export const Sources = () => {
             if (discoveryType === 'domain') {
                 const res = await fetch(`${API_BASE_URL}/sources/discover`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...authHeader() },
                     body: JSON.stringify({ url: discoveryQuery })
                 });
                 const data = await res.json();
@@ -205,7 +209,7 @@ export const Sources = () => {
             } else {
                 const res = await fetch(`${API_BASE_URL}/sources/generate-topic`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...authHeader() },
                     body: JSON.stringify({ topic: discoveryQuery, country_hl: discoveryCountry })
                 });
                 const data = await res.json();
