@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Activity, TrendingUp, AlertTriangle, FileText, Power, PowerOff } from 'lucide-react';
 import { Button } from "@/components/ui/button"
 
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:4000/api';
+
 const StatCard = ({ title, value, change, icon: Icon, trend }: any) => (
     <div className="p-6 rounded-xl border bg-card text-card-foreground shadow-sm">
         <div className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -26,8 +28,8 @@ export const Dashboard = () => {
 
     useEffect(() => {
         Promise.all([
-            fetch('http://localhost:4000/api/dashboard/stats').then(res => res.json()),
-            fetch('http://localhost:4000/api/settings').then(res => res.json())
+            fetch(`${API_BASE_URL}/dashboard/stats`).then(res => res.json()),
+            fetch(`${API_BASE_URL}/settings`).then(res => res.json())
         ])
             .then(([statsData, settingsData]) => {
                 setStats(statsData);
@@ -44,7 +46,7 @@ export const Dashboard = () => {
         const newState = !isIngestionEnabled;
         setIsIngestionEnabled(newState); // Optimistic UI update
         try {
-            await fetch('http://localhost:4000/api/settings/ingestion/toggle', {
+            await fetch(`${API_BASE_URL}/settings/ingestion/toggle`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ enabled: newState })

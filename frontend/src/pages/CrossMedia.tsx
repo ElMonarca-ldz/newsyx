@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Layers, Share2, TrendingUp } from 'lucide-react';
 
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:4000/api';
+
 export const CrossMedia = () => {
     const [events, setEvents] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch('http://localhost:4000/api/events')
+        fetch(`${API_BASE_URL}/events`)
             .then(res => res.json())
             .then(data => {
                 setEvents(data);

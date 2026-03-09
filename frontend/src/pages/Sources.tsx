@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Trash2, Edit2, Check, X, Globe, Radio, Save, Search, Compass, AlertCircle, Loader2 } from 'lucide-react';
 
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:4000/api';
+
 interface Source {
     id: string;
     feedId: string;
@@ -90,7 +92,7 @@ export const Sources = () => {
 
     const fetchSources = () => {
         setLoading(true);
-        fetch('http://localhost:4000/api/sources')
+        fetch(`${API_BASE_URL}/sources`)
             .then(res => res.json())
             .then(data => {
                 setSources(data);
@@ -110,7 +112,7 @@ export const Sources = () => {
         const nextStatus = !currentStatus;
         setSources(prev => prev.map(s => s.id === id ? { ...s, activo: nextStatus } : s));
 
-        fetch(`http://localhost:4000/api/sources/${id}`, {
+        fetch(`${API_BASE_URL}/sources/${id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ activo: nextStatus })
@@ -127,7 +129,7 @@ export const Sources = () => {
 
     const handleDelete = (id: string) => {
         if (!window.confirm('¿Estás seguro de que deseas eliminar esta fuente?')) return;
-        fetch(`http://localhost:4000/api/sources/${id}`, { method: 'DELETE' })
+        fetch(`${API_BASE_URL}/sources/${id}`, { method: 'DELETE' })
             .then(() => setSources(prev => prev.filter(s => s.id !== id)))
             .catch(err => console.error('Error deleting source:', err));
     };
@@ -158,8 +160,8 @@ export const Sources = () => {
         e.preventDefault();
         const method = editingId ? 'PUT' : 'POST';
         const url = editingId
-            ? `http://localhost:4000/api/sources/${editingId}`
-            : 'http://localhost:4000/api/sources';
+            ? `${API_BASE_URL}/sources/${editingId}`
+            : `${API_BASE_URL}/sources`;
 
         fetch(url, {
             method: method,
@@ -191,7 +193,7 @@ export const Sources = () => {
 
         try {
             if (discoveryType === 'domain') {
-                const res = await fetch('http://localhost:4000/api/sources/discover', {
+                const res = await fetch(`${API_BASE_URL}/sources/discover`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url: discoveryQuery })
@@ -201,7 +203,7 @@ export const Sources = () => {
                 setDiscoveredFeeds(data.feeds || []);
                 if (data.feeds.length === 0) setDiscoveryError('No se encontraron feeds RSS en este dominio.');
             } else {
-                const res = await fetch('http://localhost:4000/api/sources/generate-topic', {
+                const res = await fetch(`${API_BASE_URL}/sources/generate-topic`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ topic: discoveryQuery, country_hl: discoveryCountry })
