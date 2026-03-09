@@ -443,10 +443,11 @@ const DEFAULT_RSS_FEEDS: Record<string, FeedSeedData> = {
 async function main() {
     console.log('Start seeding ...');
 
-    // Create default admin user
     const admin = await prisma.user.upsert({
         where: { email: 'admin@newsyx.com' },
-        update: {},
+        update: {
+            passwordHash: '$2b$10$wztsmexgd0RR9ryhrNUQiOhtqA2I5C3/4m905jx4CWT8sWB1z8.B6', // admin123
+        },
         create: {
             email: 'admin@newsyx.com',
             name: 'Admin User',
@@ -456,10 +457,11 @@ async function main() {
     });
     console.log(`Created user with id: ${admin.id}`);
 
-    // Create rmarketing user
     const rmarketing = await prisma.user.upsert({
         where: { email: 'rmarketing@newsyx.com' },
-        update: {},
+        update: {
+            passwordHash: '$2b$10$wztsmexgd0RR9ryhrNUQiOhtqA2I5C3/4m905jx4CWT8sWB1z8.B6', // admin123
+        },
         create: {
             email: 'rmarketing@newsyx.com',
             name: 'Rmarketing',
